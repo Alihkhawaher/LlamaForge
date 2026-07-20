@@ -26,6 +26,8 @@ DEFAULTS = {
     "git_remote":  "https://github.com/ggml-org/llama.cpp",
     "auto_load_model": "",                    # model id to load automatically on launch ("" = none)
     "presets":     {},                       # named knob sets: {name: {knob: value}}
+    "ui_mode":     "lite",                    # "lite" (curated knobs) or "advanced" (all ~220)
+    "onboarded":   False,                     # first-run wizard shown once, then True
 }
 
 def load():
@@ -41,6 +43,32 @@ def load():
 def save(cfg):
     with open(CONFIG, "w", encoding="utf-8", newline="") as f:
         json.dump(cfg, f, indent=2)
+    return cfg
+
+def migrate():
+    """One-time upgrade of an on-disk config.json for the Lite/Advanced feature.
+
+    Runs at server startup. A config that predates this feature has no `ui_mode`
+    key: classify it so returning users see no change. An install that already
+    built llama.cpp (server_bin set) is treated as existing -> Advanced +
+    onboarded; a fresh checkout -> Lite + not onboarded (so the wizard shows).
+    Idempotent: a config already carrying `ui_mode` is returned unchanged.
+    """
+    if not os.path.exists(CONFIG):
+        return load()
+    cfg = load()
+    raw = {}
+    try:
+        with open(CONFIG, encoding="utf-8-sig") as f:
+            raw = json.load(f)
+    except Exception:
+        raw = {}
+    if "ui_mode" in raw:
+        return cfg
+    existing = bool(cfg.get("server_bin"))
+    cfg["ui_mode"] = "advanced" if existing else "lite"
+    cfg["onboarded"] = existing
+    save(cfg)
     return cfg
 
 # ---------------- models.ini (BOM-free, comment-preserving) ----------------

@@ -299,6 +299,8 @@ class H(BaseHTTPRequestHandler):
             s["onboarding"] = {
                 "server_bin_ok": bool(c.get("server_bin")) and os.path.exists(c["server_bin"]),
                 "model_count": len(s["models"]),
+                "ui_mode": c.get("ui_mode", "lite"),
+                "onboarded": bool(c.get("onboarded", False)),
             }
             return self._send(200, s)
         if p == "/api/schema":   return self._send(200, schema())
@@ -664,6 +666,7 @@ def _auto_load(model_id):
         time.sleep(1)
 
 def main():
+    config.migrate()
     c = cfg()
     port = c["panel_port"]
     print(f"LlamaForge -> http://127.0.0.1:{port}")
