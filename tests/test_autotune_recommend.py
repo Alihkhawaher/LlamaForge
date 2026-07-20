@@ -45,6 +45,9 @@ class TestRecommendCore(unittest.TestCase):
         r = autotune.recommend({}, hw, "balanced", size_bytes=None)
         # no layers / no size known -> safe full-offload attempt, no crash
         self.assertIn("n-gpu-layers", r["knobs"])
+        # rationale should indicate unknown, not falsely claim weights fit
+        rationale = r["rationale"]["n-gpu-layers"].lower()
+        self.assertIn("unknown", rationale)
 
 
 if __name__ == "__main__":

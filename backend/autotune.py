@@ -12,6 +12,9 @@ INTENTS = ("balanced", "speed", "context", "coding")
 # Fraction of VRAM the weights may claim, leaving room for the KV cache/activations.
 _HEADROOM = {"balanced": 0.90, "speed": 0.92, "context": 0.78, "coding": 0.90}
 
+# Maximum context window for "context" intent.
+_CTX_MAX = 150000
+
 
 def _total_vram_mib(hw):
     return sum((g.get("vram_mib") or 0) for g in hw.get("gpus", []))
@@ -48,7 +51,11 @@ def recommend(meta, hw, intent="balanced", size_bytes=None):
         budget = int(total * _HEADROOM[intent])
         knobs["n-gpu-layers"] = _fit_ngl(layers, weights_mib, budget)
         if knobs["n-gpu-layers"] == "99":
-            why["n-gpu-layers"] = f"Weights fit in {total} MiB VRAM - full GPU offload."
+            # Distinguish between unknown size and genuine fit
+            if not layers or not weights_mib:
+                why["n-gpu-layers"] = "Model size/layer count unknown - attempting full GPU offload."
+            else:
+                why["n-gpu-layers"] = f"Weights fit in {total} MiB VRAM - full GPU offload."
         else:
             why["n-gpu-layers"] = (f"~{int(weights_mib)} MiB weights vs {budget} MiB budget "
                                    f"- offloading {knobs['n-gpu-layers']}/{layers} layers.")
@@ -72,7 +79,7 @@ def recommend(meta, hw, intent="balanced", size_bytes=None):
 
 
 def _ctx_for(intent, trained):
-    ceil = {"balanced": 65536, "speed": 16384, "context": 150000, "coding": 65536}[intent]
+    ceil = {"balanced": 65536, "speed": 16384, "context": _CTX_MAX, "coding": 65536}[intent]
     if not trained or trained <= 0:
         return None
     return min(trained, ceil)
@@ -80,7 +87,7 @@ def _ctx_for(intent, trained):
 
 def _ctx_reason(intent, trained, ctx):
     if intent == "context":
-        return f"Max-context: using the model's trained {trained} tokens (capped 150000)."
+        return f"Max-context: using the model's trained {trained} tokens (capped {_CTX_MAX})."
     if intent == "speed":
         return f"Max-speed: smaller {ctx}-token window to cut KV-cache overhead."
     return f"Balanced {ctx}-token window (trained {trained})."
