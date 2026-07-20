@@ -42,6 +42,134 @@ function initModeToggle(){
     b.onclick=()=>setMode(b.dataset.mode));
 }
 
+/* ---------- first-run wizard ---------- */
+const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
+  steps:["engine","hardware","model","tune","load"]};
+
+function wizShow(){ $("#wizard").hidden=false; wizRender(); }
+function wizHide(){ $("#wizard").hidden=true; }
+
+async function wizMaybeStart(state){
+  const ob=state.onboarding||{};
+  const el=$("#wizard");
+  if(!ob.onboarded && el && el.hidden) wizShow();
+}
+
+function wizRender(){
+  const kind=WIZ.steps[WIZ.step];
+  const body=$("#wizard-body");
+  const R={engine:wizEngine, hardware:wizHardware, model:wizModel,
+           tune:wizTune, load:wizLoad}[kind];
+  R(body);
+  $("#wiz-back").disabled = WIZ.step===0;
+}
+
+function wizEngine(body){
+  setHTML(body,`<div class="wizard-step"><h2>llama.cpp engine</h2>
+    <p>Do you already have a llama.cpp build?</p>
+    <label><input type="radio" name="eng" value="have" checked> Yes, I have one built</label><br>
+    <label><input type="radio" name="eng" value="clone"> No — clone &amp; build it for me</label>
+    <div style="margin-top:10px">
+      <label>Flavor:
+        <select id="eng-flavor">
+          <option value="official">official llama.cpp</option>
+          <option value="fork">mainline fork</option>
+          <option value="ik" disabled>ik_llama (coming soon)</option>
+        </select>
+      </label>
+    </div></div>`);
+}
+
+function wizHardware(body){
+  const g=(STATE&&STATE.gpus)||[];
+  const rows=(g.length&&!g[0].error)
+    ? g.map(x=>`<li>${esc(x.name||"GPU")} — ${esc(x.total?(x.total/1024).toFixed(1):"?")} GB</li>`).join("")
+    : "";
+  setHTML(body,`<div class="wizard-step"><h2>Your hardware</h2>
+    <ul>${rows||"<li>No GPU detected — CPU mode.</li>"}</ul></div>`);
+}
+
+function wizModel(body){
+  const models=((STATE&&STATE.models)||[]).filter(m=>m.backend!=="vllm");
+  if(!models.length){
+    setHTML(body,`<div class="wizard-step"><h2>Pick a model</h2>
+      <p>No models found. <a href="#" id="wiz-discover">Find one in Discover</a>.</p></div>`);
+    const d=$("#wiz-discover"); if(d) d.onclick=(e)=>{e.preventDefault();wizHide();switchTab("discover");};
+    return;
+  }
+  const opts=models.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join("");
+  setHTML(body,`<div class="wizard-step"><h2>Pick a model</h2>
+    <select id="wiz-model">${opts}</select></div>`);
+  const ms=$("#wiz-model"); if(ms) WIZ.model=ms.value;
+}
+
+function wizTune(body){
+  setHTML(body,`<div class="wizard-step"><h2>Tune for your goal</h2>
+    <select id="wiz-intent">
+      <option value="balanced">Balanced</option>
+      <option value="speed">Max speed</option>
+      <option value="context">Max context</option>
+      <option value="coding">Coding</option>
+    </select>
+    <button id="wiz-tune-run">Auto-tune</button>
+    <button id="wiz-tune-refine" hidden>Refine by benchmarking (~1 min)</button>
+    <div id="wiz-tune-out"></div></div>`);
+  $("#wiz-tune-run").onclick=async()=>{
+    WIZ.intent=$("#wiz-intent").value;
+    const r=await api("/api/autotune/recommend",{model:WIZ.model,intent:WIZ.intent});
+    WIZ.rec=r; wizRenderRec(r); $("#wiz-tune-refine").hidden=false;
+  };
+  $("#wiz-tune-refine").onclick=async()=>{
+    const r=await api("/api/autotune/refine",
+      {model:WIZ.model,intent:WIZ.intent,knobs:WIZ.rec.knobs});
+    WIZ.rec={...WIZ.rec,knobs:r.knobs}; wizRenderRec(WIZ.rec);
+  };
+}
+
+function wizRenderRec(r){
+  const rows=Object.entries(r.knobs||{}).map(([k,v])=>
+    `<tr><td>${esc(k)}</td><td>${esc(v)}</td><td class="wizard-rationale">${esc((r.rationale||{})[k]||"")}</td></tr>`).join("");
+  setHTML($("#wiz-tune-out"),`<table>${rows}</table>`);
+}
+
+function wizLoad(body){
+  setHTML(body,`<div class="wizard-step"><h2>Ready</h2>
+    <p>Apply these settings to <b>${esc(WIZ.model)}</b> and load it now.</p></div>`);
+}
+
+async function wizNext(){
+  const kind=WIZ.steps[WIZ.step];
+  if(kind==="engine"){
+    const sel=document.querySelector('input[name="eng"]:checked');
+    WIZ.engine=sel?sel.value:"have";
+    // "clone" path reuses the Build tab flow; minimal wizard triggers it then continues.
+  }
+  if(kind==="model"){
+    const ms=$("#wiz-model"); if(ms) WIZ.model=ms.value;
+    if(!WIZ.model) return; // require a model
+  }
+  if(kind==="load"){
+    try{
+      if(WIZ.rec) await api("/api/save",{model:WIZ.model,settings:WIZ.rec.knobs});
+      await api("/api/load",{model:WIZ.model});
+      await api("/api/config",{onboarded:true,ui_mode:"lite"});
+      applyMode("lite"); wizHide(); await refresh(true);
+      toast("Model loaded","ok");
+    }catch(e){ toast("Load failed","err"); }
+    return;
+  }
+  WIZ.step=Math.min(WIZ.step+1, WIZ.steps.length-1); wizRender();
+}
+
+function initWizard(){
+  $("#wiz-next").onclick=wizNext;
+  $("#wiz-back").onclick=()=>{WIZ.step=Math.max(0,WIZ.step-1);wizRender();};
+  $("#wiz-skip").onclick=async()=>{
+    await api("/api/config",{onboarded:true,ui_mode:"advanced"});
+    applyMode("advanced"); wizHide();
+  };
+}
+
 function switchTab(name){const t=$(`.tab[data-tab="${name}"]`);if(t)t.click();}
 $$(".tab").forEach(t=>t.onclick=()=>{
   $$(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");
@@ -427,6 +555,7 @@ async function refresh(silent){
     if(!SCHEMA||SCHEMA.error||!(SCHEMA.groups||[]).length) SCHEMA=await api("/api/schema");
     const s=await api("/api/state");STATE=s;renderGpus(s.gpus);renderModels();updateCmpRun();
     applyMode((s.onboarding&&s.onboarding.ui_mode)||"lite");
+    wizMaybeStart(s);
     renderOnboarding(s);
     const plat=$("#platform");
     if(plat&&s.platform)plat.textContent=" · "+s.platform;
@@ -1032,6 +1161,7 @@ setInterval(()=>{if($(".tab.active").dataset.tab==="stats")loadStats(true);},400
 function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+" LOCAL";}
 setInterval(clock,1000);clock();
 initModeToggle();
+initWizard();
 (async()=>{SCHEMA=await api("/api/schema");await refresh();})();
 setInterval(()=>{if($(".tab.active").dataset.tab==="models")refresh(true);},4000);
 
