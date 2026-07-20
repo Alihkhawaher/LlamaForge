@@ -94,5 +94,26 @@ def _ctx_reason(intent, trained, ctx):
 
 
 def _apply_intent(knobs, why, hw, intent):
-    """Filled in by Task 3. Balanced/CPU need nothing extra."""
-    return
+    gpus = hw.get("gpus") or []
+
+    if intent == "context":
+        knobs["cache-type-k"] = knobs["cache-type-v"] = "q8_0"
+        why["cache-type-k"] = why["cache-type-v"] = (
+            "Max-context: 8-bit KV cache roughly halves memory per token.")
+    elif intent == "speed":
+        knobs["cache-type-k"] = knobs["cache-type-v"] = "f16"
+        why["cache-type-k"] = why["cache-type-v"] = "Max-speed: full-precision KV cache."
+        knobs["batch-size"] = "2048"
+        knobs["ubatch-size"] = "512"
+        why["batch-size"] = "Larger batch for higher prompt throughput."
+        why["ubatch-size"] = "Micro-batch tuned for throughput (refine can adjust)."
+    elif intent == "coding":
+        knobs["temp"] = "0.2"
+        knobs["top-p"] = "0.9"
+        why["temp"] = "Coding: low temperature for deterministic output."
+        why["top-p"] = "Coding: tightened nucleus sampling."
+
+    if len(gpus) > 1:
+        split = ",".join(str(round((g.get("vram_mib") or 0) / 1000)) for g in gpus)
+        knobs["tensor-split"] = split
+        why["tensor-split"] = f"Split across {len(gpus)} GPUs by VRAM ({split})."
