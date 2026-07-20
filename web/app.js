@@ -2,6 +2,8 @@
 // being placed in markup; setHTML routes through a computed property so the
 // output stays a single audited sink.
 const $=(s,e=document)=>e.querySelector(s), $$=(s,e=document)=>[...e.querySelectorAll(s)];
+const LITE_KNOBS=new Set(["n-gpu-layers","ctx-size","cache-type-k","cache-type-v",
+  "flash-attn","batch-size","ubatch-size","threads","tensor-split","temp","top-p"]);
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const setHTML=(el,h)=>{ if(el) el["inner"+"HTML"]=h; };   // escaped input only
 let STATE=null, SCHEMA=null, VLLM_SCHEMA=null, vllmSchemaPending=false, openId=localStorage.getItem("lf_openid")||null, onlySet=false, kquery="", mquery="", favOnly=false;
@@ -24,6 +26,21 @@ async function api(path,body){
   const r=await fetch(path,o);return r.json();
 }
 function toast(m,c=""){const t=$("#toast");t.textContent=m;t.className="show "+c;clearTimeout(t._t);t._t=setTimeout(()=>t.className="",2600);}
+
+/* ---------- lite/advanced mode ---------- */
+function applyMode(mode){
+  document.body.classList.toggle("mode-lite", mode!=="advanced");
+  document.querySelectorAll("#mode-toggle button").forEach(b=>
+    b.classList.toggle("active", b.dataset.mode===(mode==="advanced"?"advanced":"lite")));
+}
+async function setMode(mode){
+  applyMode(mode);
+  try{ await api("/api/config",{ui_mode:mode}); }catch(e){}
+}
+function initModeToggle(){
+  document.querySelectorAll("#mode-toggle button").forEach(b=>
+    b.onclick=()=>setMode(b.dataset.mode));
+}
 
 function switchTab(name){const t=$(`.tab[data-tab="${name}"]`);if(t)t.click();}
 $$(".tab").forEach(t=>t.onclick=()=>{
@@ -83,7 +100,7 @@ function knobField(m,k){
   }else{
     ctrl=`<input data-k="${esc(k.key)}" value="${esc(v)}" placeholder="${esc(ph)}" ${(k.type==="int"||k.type==="float")?'inputmode="numeric"':''}>`;
   }
-  return `<div class="fld ${isSet?"set":""}" data-desc="${esc((k.key+' '+k.desc).toLowerCase())}">
+  return `<div class="fld ${isSet?"set":""}${LITE_KNOBS.has(k.key)?"":" advanced-only"}" data-desc="${esc((k.key+' '+k.desc).toLowerCase())}">
     <label title="${esc(k.desc)}">${esc(k.key)}</label>${ctrl}
     ${k.desc?`<div class="hint" title="${esc(k.desc)}">${esc(k.desc)}</div>`:""}</div>`;
 }
@@ -409,6 +426,7 @@ async function refresh(silent){
     // PR #1: recover the knob schema without a reload once config.json is fixed
     if(!SCHEMA||SCHEMA.error||!(SCHEMA.groups||[]).length) SCHEMA=await api("/api/schema");
     const s=await api("/api/state");STATE=s;renderGpus(s.gpus);renderModels();updateCmpRun();
+    applyMode((s.onboarding&&s.onboarding.ui_mode)||"lite");
     renderOnboarding(s);
     const plat=$("#platform");
     if(plat&&s.platform)plat.textContent=" · "+s.platform;
@@ -1013,6 +1031,7 @@ setInterval(()=>{if($(".tab.active").dataset.tab==="stats")loadStats(true);},400
 
 function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+" LOCAL";}
 setInterval(clock,1000);clock();
+initModeToggle();
 (async()=>{SCHEMA=await api("/api/schema");await refresh();})();
 setInterval(()=>{if($(".tab.active").dataset.tab==="models")refresh(true);},4000);
 
