@@ -151,11 +151,24 @@ async function wizNext(){
   if(kind==="load"){
     try{
       if(WIZ.rec) await api("/api/save",{model:WIZ.model,settings:WIZ.rec.knobs});
-      await api("/api/load",{model:WIZ.model});
+      // Try to load in its own try/catch; detect both thrown errors and failed responses
+      let loadErr=false;
+      try{
+        const r=await api("/api/load",{model:WIZ.model});
+        if(!r.success) loadErr=true;
+      }catch(e){
+        loadErr=true;
+      }
+      // Always persist onboarding and close wizard, regardless of load outcome
       await api("/api/config",{onboarded:true,ui_mode:"lite"});
       applyMode("lite"); wizHide(); await refresh(true);
-      toast("Model loaded","ok");
-    }catch(e){ toast("Load failed","err"); }
+      // Give appropriate toast based on load outcome
+      if(loadErr){
+        toast("Setup done — model failed to load; load it from the Models tab","err");
+      }else{
+        toast("Setup complete","ok");
+      }
+    }catch(e){ toast("Setup failed","err"); }
     return;
   }
   WIZ.step=Math.min(WIZ.step+1, WIZ.steps.length-1); wizRender();
