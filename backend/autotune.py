@@ -7,6 +7,8 @@ Only the ~8 knobs that materially affect fit/throughput are set; everything
 else keeps llama.cpp's own defaults.
 """
 
+import time
+
 INTENTS = ("balanced", "speed", "context", "coding")
 
 # Fraction of VRAM the weights may claim, leaving room for the KV cache/activations.
@@ -117,3 +119,37 @@ def _apply_intent(knobs, why, hw, intent):
         split = ",".join(str(round((g.get("vram_mib") or 0) / 1000)) for g in gpus)
         knobs["tensor-split"] = split
         why["tensor-split"] = f"Split across {len(gpus)} GPUs by VRAM ({split})."
+
+
+def _candidates(base, intent):
+    """Base first, then a few high-impact variants worth benchmarking."""
+    out = [dict(base)]
+    if intent == "speed":
+        for ub in ("1024",):
+            c = dict(base); c["ubatch-size"] = ub; out.append(c)
+        for bs in ("4096",):
+            c = dict(base); c["batch-size"] = bs; out.append(c)
+    else:
+        for ub in ("1024",):
+            c = dict(base); c["ubatch-size"] = ub; out.append(c)
+    return out
+
+
+def refine(base_knobs, intent, load_fn, measure_fn, budget_s=60, clock=time.monotonic):
+    start = clock()
+    best_knobs, best_tok = dict(base_knobs), -1.0
+    cands = []
+    for cand in _candidates(base_knobs, intent):
+        if clock() - start >= budget_s:
+            break
+        try:
+            load_fn(cand)
+            tok = float(measure_fn())
+        except Exception:
+            continue
+        cands.append({"knobs": cand, "tok_s": tok})
+        if tok > best_tok:
+            best_knobs, best_tok = cand, tok
+    return {"knobs": best_knobs,
+            "measurements": {"candidates": cands,
+                             "chosen_tok_s": best_tok if best_tok >= 0 else 0.0}}
