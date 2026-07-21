@@ -7,7 +7,7 @@ detection, and drive scanning. Pure Python stdlib.
 import json, os, subprocess, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune
+import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag
 
@@ -299,6 +299,72 @@ def merge_vllm_models(base, vllm_status, vllm_ids, router_port):
         base["models"].append(row)
     return base
 
+# ---------- anthropic shim ----------
+def _resolve_anthropic_model(requested):
+    ids = {m.get("id") for m in model_state().get("models", [])}
+    if requested in ids:
+        return requested
+    return cfg().get("anthropic_default_model") or requested
+
+
+def _shim_auth_ok(headers):
+    c = cfg()
+    if c.get("router_host", "127.0.0.1") == "127.0.0.1":
+        return True
+    key = c.get("router_api_key", "")
+    if not key:
+        return True
+    return headers.get("x-api-key") == key
+
+
+def _router_openai(oai_body, stream=False):
+    """POST the translated body to the router's OpenAI chat endpoint.
+    Non-stream: returns (status, dict). Stream: returns (status, response) where
+    response is the open urllib object to iterate for SSE lines."""
+    url = router_base() + "/v1/chat/completions"
+    headers = {"Content-Type": "application/json"}
+    key = cfg().get("router_api_key", "")
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    req = urllib.request.Request(url, data=json.dumps(oai_body).encode(),
+                                 method="POST", headers=headers)
+    if stream:
+        try:
+            resp = urllib.request.urlopen(req, timeout=600)
+            return resp.status, resp
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.loads(e.read().decode())
+            except Exception:
+                return e.code, {"error": str(e)}
+        except Exception as e:
+            return 599, {"error": str(e)}
+    try:
+        with urllib.request.urlopen(req, timeout=600) as r:
+            return r.status, json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode())
+        except Exception:
+            return e.code, {"error": str(e)}
+    except Exception as e:
+        return 599, {"error": str(e)}
+
+
+def _anthropic_messages(body, headers):
+    """Non-streaming /v1/messages: returns (status, anthropic_json)."""
+    model = _resolve_anthropic_model(body.get("model", ""))
+    oai = anthropic_shim.to_openai_request({**body, "model": model, "stream": False})
+    status, data = _router_openai(oai, stream=False)
+    if status >= 400:
+        msg = data.get("error") if isinstance(data, dict) else str(data)
+        if isinstance(msg, dict):
+            msg = msg.get("message", "upstream error")
+        return anthropic_shim.anthropic_error(status,
+            anthropic_shim.error_type_for_status(status), msg or "upstream error")
+    return 200, anthropic_shim.to_anthropic_response(data, model)
+
+
 # ---------- HTTP ----------
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -331,6 +397,9 @@ class H(BaseHTTPRequestHandler):
                 self._send(400, {"error": "vLLM backend requires Windows + WSL2"})
             return True
         return False
+
+    def _anthropic_stream(self, body):
+        return self._send(501, {"error": "streaming implemented in a later step"})
 
     def do_GET(self):
         p = self.path.split("?")[0]
@@ -701,6 +770,21 @@ class H(BaseHTTPRequestHandler):
             if ok:
                 vllm_registry.remove(repo)
             return self._send(200 if ok else 500, {"ok": ok, "error": err})
+
+        if p == "/v1/messages/count_tokens":
+            if not cfg().get("anthropic_shim_enabled", True):
+                return self._send(404, {"error": "not found"})
+            return self._send(200, {"input_tokens": anthropic_shim.count_tokens_estimate(body)})
+        if p == "/v1/messages":
+            if not cfg().get("anthropic_shim_enabled", True):
+                return self._send(404, {"error": "not found"})
+            if not _shim_auth_ok({k.lower(): v for k, v in self.headers.items()}):
+                st, err = anthropic_shim.anthropic_error(401, "authentication_error", "invalid x-api-key")
+                return self._send(st, err)
+            if body.get("stream"):
+                return self._anthropic_stream(body)   # implemented in Task 6
+            status, out = _anthropic_messages(body, {k.lower(): v for k, v in self.headers.items()})
+            return self._send(status, out)
 
         return self._send(404, {"error": "not found"})
 
