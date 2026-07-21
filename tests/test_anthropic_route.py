@@ -63,6 +63,16 @@ class TestAnthropicRoute(unittest.TestCase):
                                "router_api_key": "secret", "router_port": 8080}):
             self.assertTrue(server._shim_auth_ok({}))
 
+    def test_count_tokens_lan_key_mismatch_401(self):
+        # The /v1/messages/count_tokens route now calls _shim_auth_ok with the
+        # same lowercased-headers pattern as /v1/messages before returning the
+        # estimate, so it must reject on a LAN host with a mismatched key.
+        with mock.patch.object(server, "cfg", return_value={"router_host": "0.0.0.0",
+                               "router_api_key": "secret", "anthropic_default_model": "",
+                               "anthropic_shim_enabled": True, "router_port": 8080}):
+            self.assertFalse(server._shim_auth_ok({"x-api-key": "wrong"}))
+            self.assertTrue(server._shim_auth_ok({"x-api-key": "secret"}))
+
 
 if __name__ == "__main__":
     unittest.main()

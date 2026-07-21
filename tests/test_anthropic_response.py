@@ -23,6 +23,17 @@ class TestResponseTranslation(unittest.TestCase):
         self.assertEqual(a["stop_reason"], "tool_use")
         self.assertEqual(a["content"][0], {"type": "tool_use", "id": "t1", "name": "f", "input": {"x": 1}})
 
+    def test_tool_use_response_missing_id_gets_fallback(self):
+        o = {"choices": [{"message": {"content": None, "tool_calls": [
+            {"function": {"name": "f", "arguments": '{"x":1}'}}]},
+            "finish_reason": "tool_calls"}]}
+        a = sh.to_anthropic_response(o, "m")
+        tool_block = a["content"][0]
+        self.assertEqual(tool_block["type"], "tool_use")
+        self.assertIsInstance(tool_block["id"], str)
+        self.assertTrue(tool_block["id"])
+        self.assertTrue(tool_block["id"].startswith("toolu_"))
+
     def test_stop_reason_mapping(self):
         self.assertEqual(sh.map_stop_reason("stop"), "end_turn")
         self.assertEqual(sh.map_stop_reason("length"), "max_tokens")

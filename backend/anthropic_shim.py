@@ -129,7 +129,7 @@ def to_anthropic_response(o, model):
             inp = json.loads(fn.get("arguments") or "{}")
         except Exception:
             inp = {}
-        content.append({"type": "tool_use", "id": tc.get("id"), "name": fn.get("name"), "input": inp})
+        content.append({"type": "tool_use", "id": tc.get("id") or ("toolu_" + uuid.uuid4().hex[:20]), "name": fn.get("name"), "input": inp})
     usage = o.get("usage") or {}
     return {
         "id": o.get("id") or ("msg_" + uuid.uuid4().hex[:24]),

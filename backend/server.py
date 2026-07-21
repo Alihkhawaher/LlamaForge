@@ -811,6 +811,9 @@ class H(BaseHTTPRequestHandler):
         if p == "/v1/messages/count_tokens":
             if not cfg().get("anthropic_shim_enabled", True):
                 return self._send(404, {"error": "not found"})
+            if not _shim_auth_ok({k.lower(): v for k, v in self.headers.items()}):
+                st, err = anthropic_shim.anthropic_error(401, "authentication_error", "invalid x-api-key")
+                return self._send(st, err)
             return self._send(200, {"input_tokens": anthropic_shim.count_tokens_estimate(body)})
         if p == "/v1/messages":
             if not cfg().get("anthropic_shim_enabled", True):
