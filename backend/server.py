@@ -365,6 +365,22 @@ def _anthropic_messages(body, headers):
     return 200, anthropic_shim.to_anthropic_response(data, model)
 
 
+def _write_anthropic_stream(write, model, status, resp):
+    """Translate a router streaming response into Anthropic SSE and write it.
+    `resp` is either an open urllib response (status < 400, iterate for lines)
+    or an error dict (status >= 400). `write(bytes)` sends to the client."""
+    if status >= 400:
+        msg = resp.get("error") if isinstance(resp, dict) else str(resp)
+        if isinstance(msg, dict):
+            msg = msg.get("message", "upstream error")
+        write(anthropic_shim._sse("error", {"type": "error", "error": {
+            "type": anthropic_shim.error_type_for_status(status),
+            "message": msg or "upstream error"}}))
+        return
+    for event in anthropic_shim.stream_anthropic_events(resp, model):
+        write(event)
+
+
 # ---------- HTTP ----------
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
@@ -399,7 +415,28 @@ class H(BaseHTTPRequestHandler):
         return False
 
     def _anthropic_stream(self, body):
-        return self._send(501, {"error": "streaming implemented in a later step"})
+        model = _resolve_anthropic_model(body.get("model", ""))
+        oai = anthropic_shim.to_openai_request({**body, "model": model, "stream": True})
+        oai["stream_options"] = {"include_usage": True}
+        status, resp = _router_openai(oai, stream=True)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        def write(b):
+            try:
+                self.wfile.write(b)
+                self.wfile.flush()
+            except Exception:
+                pass
+        _write_anthropic_stream(write, model, status, resp)
+        if hasattr(resp, "close"):
+            try:
+                resp.close()
+            except Exception:
+                pass
 
     def do_GET(self):
         p = self.path.split("?")[0]
