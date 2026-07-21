@@ -105,3 +105,69 @@ def to_openai_request(a):
     if a.get("tool_choice") is not None:
         out["tool_choice"] = map_tool_choice(a["tool_choice"])
     return out
+
+
+# ---------------- response: OpenAI -> Anthropic (non-streaming) ----------------
+
+_STOP = {"stop": "end_turn", "length": "max_tokens",
+         "tool_calls": "tool_use", "function_call": "tool_use"}
+
+
+def map_stop_reason(fr):
+    return _STOP.get(fr, "end_turn")
+
+
+def to_anthropic_response(o, model):
+    choice = (o.get("choices") or [{}])[0]
+    msg = choice.get("message") or {}
+    content = []
+    if msg.get("content"):
+        content.append({"type": "text", "text": msg["content"]})
+    for tc in msg.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        try:
+            inp = json.loads(fn.get("arguments") or "{}")
+        except Exception:
+            inp = {}
+        content.append({"type": "tool_use", "id": tc.get("id"), "name": fn.get("name"), "input": inp})
+    usage = o.get("usage") or {}
+    return {
+        "id": o.get("id") or ("msg_" + uuid.uuid4().hex[:24]),
+        "type": "message", "role": "assistant", "model": model,
+        "content": content,
+        "stop_reason": map_stop_reason(choice.get("finish_reason")),
+        "stop_sequence": None,
+        "usage": {"input_tokens": usage.get("prompt_tokens", 0),
+                  "output_tokens": usage.get("completion_tokens", 0)},
+    }
+
+
+def count_tokens_estimate(a):
+    """Advisory only: ~4 chars/token over the translated prompt text."""
+    o = to_openai_request(a)
+    chars = 0
+    for m in o.get("messages", []):
+        c = m.get("content")
+        if isinstance(c, str):
+            chars += len(c)
+        elif isinstance(c, list):
+            for part in c:
+                if isinstance(part, dict):
+                    chars += len(part.get("text", ""))
+    return max(1, chars // 4)
+
+
+# ---------------- errors ----------------
+
+def anthropic_error(status, err_type, message):
+    return status, {"type": "error", "error": {"type": err_type, "message": message}}
+
+
+def error_type_for_status(status):
+    if status == 404:
+        return "not_found_error"
+    if status in (529, 599):
+        return "overloaded_error"
+    if 400 <= status < 500:
+        return "invalid_request_error"
+    return "api_error"
