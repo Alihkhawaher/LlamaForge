@@ -28,6 +28,8 @@ DEFAULTS = {
     "presets":     {},                       # named knob sets: {name: {knob: value}}
     "ui_mode":     "lite",                    # "lite" (curated knobs) or "advanced" (all ~220)
     "onboarded":   False,                     # first-run wizard shown once, then True
+    "anthropic_default_model": "",           # fallback local model id for the Anthropic shim
+    "anthropic_shim_enabled":  True,          # serve /v1/messages (Anthropic-compatible)
 }
 
 def load():
