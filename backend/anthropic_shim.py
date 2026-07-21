@@ -171,3 +171,104 @@ def error_type_for_status(status):
     if 400 <= status < 500:
         return "invalid_request_error"
     return "api_error"
+
+
+# ---------------- streaming: OpenAI SSE -> Anthropic SSE ----------------
+
+def _sse(event, data):
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+
+
+def _iter_openai_chunks(lines):
+    """Parse OpenAI 'data: {json}' SSE lines into dicts; stop at [DONE]."""
+    for raw in lines:
+        line = raw.decode() if isinstance(raw, bytes) else raw
+        line = line.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        payload = line[len("data:"):].strip()
+        if payload == "[DONE]":
+            return
+        try:
+            yield json.loads(payload)
+        except Exception:
+            continue
+
+
+def stream_anthropic_events(openai_lines, model):
+    """Stateful translation of the router's OpenAI chat SSE into the Anthropic
+    Messages streaming event sequence. Yields framed SSE byte strings."""
+    msg_id = "msg_" + uuid.uuid4().hex[:24]
+    started = False
+    cur_index = -1
+    cur_kind = None          # "text" | "tool" | None
+    tool_slots = {}          # openai tool_calls index -> anthropic block index
+    input_tokens = 0
+    output_tokens = 0
+    stop_reason = "end_turn"
+
+    def close_block():
+        return _sse("content_block_stop", {"type": "content_block_stop", "index": cur_index})
+
+    for chunk in _iter_openai_chunks(openai_lines):
+        if not started:
+            started = True
+            yield _sse("message_start", {"type": "message_start", "message": {
+                "id": msg_id, "type": "message", "role": "assistant", "model": model,
+                "content": [], "stop_reason": None, "stop_sequence": None,
+                "usage": {"input_tokens": input_tokens, "output_tokens": 0}}})
+        usage = chunk.get("usage")
+        if usage:
+            input_tokens = usage.get("prompt_tokens", input_tokens)
+            output_tokens = usage.get("completion_tokens", output_tokens)
+        choices = chunk.get("choices") or []
+        if not choices:
+            continue
+        ch = choices[0]
+        delta = ch.get("delta") or {}
+
+        text = delta.get("content")
+        if text:
+            if cur_kind != "text":
+                if cur_kind is not None:
+                    yield close_block()
+                cur_index += 1
+                cur_kind = "text"
+                yield _sse("content_block_start", {"type": "content_block_start",
+                    "index": cur_index, "content_block": {"type": "text", "text": ""}})
+            yield _sse("content_block_delta", {"type": "content_block_delta",
+                "index": cur_index, "delta": {"type": "text_delta", "text": text}})
+
+        for tc in delta.get("tool_calls") or []:
+            oi = tc.get("index", 0)
+            fn = tc.get("function") or {}
+            if oi not in tool_slots:
+                if cur_kind is not None:
+                    yield close_block()
+                cur_index += 1
+                cur_kind = "tool"
+                tool_slots[oi] = cur_index
+                yield _sse("content_block_start", {"type": "content_block_start",
+                    "index": cur_index, "content_block": {"type": "tool_use",
+                    "id": tc.get("id") or ("toolu_" + uuid.uuid4().hex[:20]),
+                    "name": fn.get("name") or "", "input": {}}})
+            args = fn.get("arguments")
+            if args:
+                yield _sse("content_block_delta", {"type": "content_block_delta",
+                    "index": tool_slots[oi], "delta": {"type": "input_json_delta",
+                    "partial_json": args}})
+
+        if ch.get("finish_reason"):
+            stop_reason = map_stop_reason(ch["finish_reason"])
+
+    if not started:
+        yield _sse("message_start", {"type": "message_start", "message": {
+            "id": msg_id, "type": "message", "role": "assistant", "model": model,
+            "content": [], "stop_reason": None, "stop_sequence": None,
+            "usage": {"input_tokens": input_tokens, "output_tokens": 0}}})
+    if cur_kind is not None:
+        yield close_block()
+    yield _sse("message_delta", {"type": "message_delta",
+        "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+        "usage": {"output_tokens": output_tokens}})
+    yield _sse("message_stop", {"type": "message_stop"})
