@@ -7,7 +7,7 @@ detection, and drive scanning. Pure Python stdlib.
 import json, os, subprocess, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats
+import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag
 
@@ -208,6 +208,61 @@ def _file_gib(path):
     except OSError:
         return None
 
+# ---------- auto-tune ----------
+def _find_model(model_id):
+    for m in model_state().get("models", []):
+        if m.get("id") == model_id:
+            return m
+    return None
+
+
+def _autotune_recommend(body):
+    mid = body.get("model", "")
+    intent = body.get("intent", "balanced")
+    m = _find_model(mid)
+    if not m:
+        return {"error": f"unknown model: {mid}"}
+    # model_state() rows normally nest the file path under settings.model;
+    # fall back to a top-level "model" key so callers passing a flatter shape
+    # (e.g. tests) still work.
+    path = m.get("model") or (m.get("settings") or {}).get("model") or ""
+    meta = gguf.metadata(path) or {}
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        size = None
+    hw = {"gpus": hardware.detect_gpus(), "cpu": hardware.detect_cpu()}
+    rec = autotune.recommend(meta, hw, intent, size_bytes=size)
+    rec.update({"model": mid, "intent": intent})
+    return rec
+
+
+def _autotune_refine(body):
+    mid = body.get("model", "")
+    intent = body.get("intent", "balanced")
+    base = body.get("knobs") or {}
+    m = _find_model(mid)
+    if not m:
+        return {"error": f"unknown model: {mid}"}
+
+    def load_fn(knobs):
+        config.set_keys(mid, knobs)
+        router("/models?reload=1")
+        code, res = router("/models/load", "POST", {"model": mid})
+        if code >= 400:
+            raise RuntimeError((res or {}).get("error", "load failed"))
+
+    def measure_fn():
+        summ = stats.TRACKER.summary()
+        for row in summ.get("per_model", []):
+            if row.get("id") == mid:
+                return float(row.get("avg_tps") or 0.0)
+        return 0.0
+
+    out = autotune.refine(base, intent, load_fn, measure_fn)
+    out["model"] = mid
+    return out
+
 def _eff(rm, glob, key, flag):
     args = rm.get("status", {}).get("args", [])
     if flag in args:
@@ -299,6 +354,8 @@ class H(BaseHTTPRequestHandler):
             s["onboarding"] = {
                 "server_bin_ok": bool(c.get("server_bin")) and os.path.exists(c["server_bin"]),
                 "model_count": len(s["models"]),
+                "ui_mode": c.get("ui_mode", "lite"),
+                "onboarded": bool(c.get("onboarded", False)),
             }
             return self._send(200, s)
         if p == "/api/schema":   return self._send(200, schema())
@@ -410,6 +467,11 @@ class H(BaseHTTPRequestHandler):
             for mid in loaded:
                 router("/models/unload", "POST", {"model": mid})
             return self._send(200, {"ok": True, "unloaded": loaded})
+
+        if p == "/api/autotune/recommend":
+            return self._send(200, _autotune_recommend(body))
+        if p == "/api/autotune/refine":
+            return self._send(200, _autotune_refine(body))
 
         if p == "/api/presets/save":
             try:
@@ -664,6 +726,7 @@ def _auto_load(model_id):
         time.sleep(1)
 
 def main():
+    config.migrate()
     c = cfg()
     port = c["panel_port"]
     print(f"LlamaForge -> http://127.0.0.1:{port}")

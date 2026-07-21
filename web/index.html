@@ -142,6 +142,17 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .cmptbl td.kname{color:var(--dim);white-space:nowrap}
 .cmptbl td.diff{color:var(--amber);background:rgba(255,176,0,.06)}
 .cmptbl td .mono{font-family:var(--mono);color:var(--cyan)}
+.mode-toggle{display:inline-flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden;margin-left:12px}
+.mode-toggle button{background:transparent;border:0;padding:4px 10px;cursor:pointer;color:var(--ink);font:inherit}
+.mode-toggle button.active{background:var(--amber);color:#000}
+body.mode-lite .advanced-only{display:none !important}
+.wizard-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;
+  align-items:center;justify-content:center;z-index:1000}
+.wizard-card{background:var(--panel);border:1px solid var(--hair);border-radius:10px;
+  padding:24px;width:min(560px,92vw);max-height:88vh;overflow:auto}
+.wizard-nav{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.wizard-step h2{margin:0 0 8px;color:var(--amber);font-family:var(--disp);letter-spacing:.08em;text-transform:uppercase;font-size:15px}
+.wizard-rationale{font-size:12px;color:var(--dim)}
 </style>
 </head>
 <body>
@@ -162,6 +173,10 @@ button:disabled{opacity:.4;cursor:not-allowed}
     <div class="tab" data-tab="discover">Discover</div>
     <div class="tab" data-tab="build">Build / Update</div>
     <div class="tab" data-tab="setup">Setup</div>
+    <span class="mode-toggle" id="mode-toggle">
+      <button data-mode="lite">Lite</button>
+      <button data-mode="advanced">Advanced</button>
+    </span>
   </div>
   <div class="view active" id="view-models">
     <div id="onboard"></div>
@@ -196,6 +211,16 @@ button:disabled{opacity:.4;cursor:not-allowed}
 </div>
 <div id="toast"></div>
 <div id="modal-root"></div>
+<div id="wizard" class="wizard-overlay" hidden>
+  <div class="wizard-card">
+    <div id="wizard-body"></div>
+    <div class="wizard-nav">
+      <button id="wiz-back">Back</button>
+      <button id="wiz-skip">Skip to Advanced</button>
+      <button id="wiz-next" class="primary">Next</button>
+    </div>
+  </div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

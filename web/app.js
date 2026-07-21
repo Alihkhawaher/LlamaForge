@@ -2,6 +2,8 @@
 // being placed in markup; setHTML routes through a computed property so the
 // output stays a single audited sink.
 const $=(s,e=document)=>e.querySelector(s), $$=(s,e=document)=>[...e.querySelectorAll(s)];
+const LITE_KNOBS=new Set(["n-gpu-layers","ctx-size","cache-type-k","cache-type-v",
+  "flash-attn","batch-size","ubatch-size","threads","tensor-split","temp","top-p"]);
 const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const setHTML=(el,h)=>{ if(el) el["inner"+"HTML"]=h; };   // escaped input only
 let STATE=null, SCHEMA=null, VLLM_SCHEMA=null, vllmSchemaPending=false, openId=localStorage.getItem("lf_openid")||null, onlySet=false, kquery="", mquery="", favOnly=false;
@@ -24,6 +26,162 @@ async function api(path,body){
   const r=await fetch(path,o);return r.json();
 }
 function toast(m,c=""){const t=$("#toast");t.textContent=m;t.className="show "+c;clearTimeout(t._t);t._t=setTimeout(()=>t.className="",2600);}
+
+/* ---------- lite/advanced mode ---------- */
+function applyMode(mode){
+  document.body.classList.toggle("mode-lite", mode!=="advanced");
+  document.querySelectorAll("#mode-toggle button").forEach(b=>
+    b.classList.toggle("active", b.dataset.mode===(mode==="advanced"?"advanced":"lite")));
+}
+async function setMode(mode){
+  applyMode(mode);
+  try{ await api("/api/config",{ui_mode:mode}); }catch(e){}
+}
+function initModeToggle(){
+  document.querySelectorAll("#mode-toggle button").forEach(b=>
+    b.onclick=()=>setMode(b.dataset.mode));
+}
+
+/* ---------- first-run wizard ---------- */
+const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
+  steps:["engine","hardware","model","tune","load"]};
+
+function wizShow(){ $("#wizard").hidden=false; wizRender(); }
+function wizHide(){ $("#wizard").hidden=true; }
+
+async function wizMaybeStart(state){
+  const ob=state.onboarding||{};
+  const el=$("#wizard");
+  if(!ob.onboarded && el && el.hidden) wizShow();
+}
+
+function wizRender(){
+  const kind=WIZ.steps[WIZ.step];
+  const body=$("#wizard-body");
+  const R={engine:wizEngine, hardware:wizHardware, model:wizModel,
+           tune:wizTune, load:wizLoad}[kind];
+  R(body);
+  $("#wiz-back").disabled = WIZ.step===0;
+}
+
+function wizEngine(body){
+  setHTML(body,`<div class="wizard-step"><h2>llama.cpp engine</h2>
+    <p>Do you already have a llama.cpp build?</p>
+    <label><input type="radio" name="eng" value="have" checked> Yes, I have one built</label><br>
+    <label><input type="radio" name="eng" value="clone"> No — clone &amp; build it for me</label>
+    <div style="margin-top:10px">
+      <label>Flavor:
+        <select id="eng-flavor">
+          <option value="official">official llama.cpp</option>
+          <option value="fork">mainline fork</option>
+          <option value="ik" disabled>ik_llama (coming soon)</option>
+        </select>
+      </label>
+    </div></div>`);
+}
+
+function wizHardware(body){
+  const g=(STATE&&STATE.gpus)||[];
+  const rows=(g.length&&!g[0].error)
+    ? g.map(x=>`<li>${esc(x.name||"GPU")} — ${esc(x.total?(x.total/1024).toFixed(1):"?")} GB</li>`).join("")
+    : "";
+  setHTML(body,`<div class="wizard-step"><h2>Your hardware</h2>
+    <ul>${rows||"<li>No GPU detected — CPU mode.</li>"}</ul></div>`);
+}
+
+function wizModel(body){
+  const models=((STATE&&STATE.models)||[]).filter(m=>m.backend!=="vllm");
+  if(!models.length){
+    setHTML(body,`<div class="wizard-step"><h2>Pick a model</h2>
+      <p>No models found. <a href="#" id="wiz-discover">Find one in Discover</a>.</p></div>`);
+    const d=$("#wiz-discover"); if(d) d.onclick=(e)=>{e.preventDefault();wizHide();switchTab("discover");};
+    return;
+  }
+  const opts=models.map(m=>`<option value="${esc(m.id)}">${esc(m.id)}</option>`).join("");
+  setHTML(body,`<div class="wizard-step"><h2>Pick a model</h2>
+    <select id="wiz-model">${opts}</select></div>`);
+  const ms=$("#wiz-model"); if(ms) WIZ.model=ms.value;
+}
+
+function wizTune(body){
+  setHTML(body,`<div class="wizard-step"><h2>Tune for your goal</h2>
+    <select id="wiz-intent">
+      <option value="balanced">Balanced</option>
+      <option value="speed">Max speed</option>
+      <option value="context">Max context</option>
+      <option value="coding">Coding</option>
+    </select>
+    <button id="wiz-tune-run">Auto-tune</button>
+    <button id="wiz-tune-refine" hidden>Refine by benchmarking (~1 min)</button>
+    <div id="wiz-tune-out"></div></div>`);
+  $("#wiz-tune-run").onclick=async()=>{
+    WIZ.intent=$("#wiz-intent").value;
+    const r=await api("/api/autotune/recommend",{model:WIZ.model,intent:WIZ.intent});
+    WIZ.rec=r; wizRenderRec(r); $("#wiz-tune-refine").hidden=false;
+  };
+  $("#wiz-tune-refine").onclick=async()=>{
+    const r=await api("/api/autotune/refine",
+      {model:WIZ.model,intent:WIZ.intent,knobs:WIZ.rec.knobs});
+    WIZ.rec={...WIZ.rec,knobs:r.knobs}; wizRenderRec(WIZ.rec);
+  };
+}
+
+function wizRenderRec(r){
+  const rows=Object.entries(r.knobs||{}).map(([k,v])=>
+    `<tr><td>${esc(k)}</td><td>${esc(v)}</td><td class="wizard-rationale">${esc((r.rationale||{})[k]||"")}</td></tr>`).join("");
+  setHTML($("#wiz-tune-out"),`<table>${rows}</table>`);
+}
+
+function wizLoad(body){
+  setHTML(body,`<div class="wizard-step"><h2>Ready</h2>
+    <p>Apply these settings to <b>${esc(WIZ.model)}</b> and load it now.</p></div>`);
+}
+
+async function wizNext(){
+  const kind=WIZ.steps[WIZ.step];
+  if(kind==="engine"){
+    const sel=document.querySelector('input[name="eng"]:checked');
+    WIZ.engine=sel?sel.value:"have";
+    // "clone" path reuses the Build tab flow; minimal wizard triggers it then continues.
+  }
+  if(kind==="model"){
+    const ms=$("#wiz-model"); if(ms) WIZ.model=ms.value;
+    if(!WIZ.model) return; // require a model
+  }
+  if(kind==="load"){
+    try{
+      if(WIZ.rec) await api("/api/save",{model:WIZ.model,settings:WIZ.rec.knobs});
+      // Try to load in its own try/catch; detect both thrown errors and failed responses
+      let loadErr=false;
+      try{
+        const r=await api("/api/load",{model:WIZ.model});
+        if(!r.success) loadErr=true;
+      }catch(e){
+        loadErr=true;
+      }
+      // Always persist onboarding and close wizard, regardless of load outcome
+      await api("/api/config",{onboarded:true,ui_mode:"lite"});
+      applyMode("lite"); wizHide(); await refresh(true);
+      // Give appropriate toast based on load outcome
+      if(loadErr){
+        toast("Setup done — model failed to load; load it from the Models tab","err");
+      }else{
+        toast("Setup complete","ok");
+      }
+    }catch(e){ toast("Setup failed","err"); }
+    return;
+  }
+  WIZ.step=Math.min(WIZ.step+1, WIZ.steps.length-1); wizRender();
+}
+
+function initWizard(){
+  $("#wiz-next").onclick=wizNext;
+  $("#wiz-back").onclick=()=>{WIZ.step=Math.max(0,WIZ.step-1);wizRender();};
+  $("#wiz-skip").onclick=async()=>{
+    await api("/api/config",{onboarded:true,ui_mode:"advanced"});
+    applyMode("advanced"); wizHide();
+  };
+}
 
 function switchTab(name){const t=$(`.tab[data-tab="${name}"]`);if(t)t.click();}
 $$(".tab").forEach(t=>t.onclick=()=>{
@@ -83,7 +241,7 @@ function knobField(m,k){
   }else{
     ctrl=`<input data-k="${esc(k.key)}" value="${esc(v)}" placeholder="${esc(ph)}" ${(k.type==="int"||k.type==="float")?'inputmode="numeric"':''}>`;
   }
-  return `<div class="fld ${isSet?"set":""}" data-desc="${esc((k.key+' '+k.desc).toLowerCase())}">
+  return `<div class="fld ${isSet?"set":""}${LITE_KNOBS.has(k.key)?"":" advanced-only"}" data-desc="${esc((k.key+' '+k.desc).toLowerCase())}">
     <label title="${esc(k.desc)}">${esc(k.key)}</label>${ctrl}
     ${k.desc?`<div class="hint" title="${esc(k.desc)}">${esc(k.desc)}</div>`:""}</div>`;
 }
@@ -409,6 +567,8 @@ async function refresh(silent){
     // PR #1: recover the knob schema without a reload once config.json is fixed
     if(!SCHEMA||SCHEMA.error||!(SCHEMA.groups||[]).length) SCHEMA=await api("/api/schema");
     const s=await api("/api/state");STATE=s;renderGpus(s.gpus);renderModels();updateCmpRun();
+    applyMode((s.onboarding&&s.onboarding.ui_mode)||"lite");
+    wizMaybeStart(s);
     renderOnboarding(s);
     const plat=$("#platform");
     if(plat&&s.platform)plat.textContent=" · "+s.platform;
@@ -1013,6 +1173,8 @@ setInterval(()=>{if($(".tab.active").dataset.tab==="stats")loadStats(true);},400
 
 function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+" LOCAL";}
 setInterval(clock,1000);clock();
+initModeToggle();
+initWizard();
 (async()=>{SCHEMA=await api("/api/schema");await refresh();})();
 setInterval(()=>{if($(".tab.active").dataset.tab==="models")refresh(true);},4000);
 
