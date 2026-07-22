@@ -40,7 +40,8 @@ def _gen_claude(endpoint, api_key, model, small_model):
         "content": json.dumps(settings, indent=2),
         "endpoint": endpoint,
         "instructions": ("Merge this into ~/.claude/settings.json, or export the "
-                         "same keys as environment variables before running Claude Code."),
+                         "same keys as environment variables before running Claude Code. "
+                         "Claude Code must run on this machine (localhost only)."),
     }
 
 
@@ -95,7 +96,8 @@ def _target_path(agent, home):
 def _backup(path):
     if os.path.exists(path):
         bak = path + ".llamaforge.bak"
-        shutil.copy2(path, bak)
+        if not os.path.exists(bak):        # preserve the user's true original across re-applies
+            shutil.copy2(path, bak)
         return bak
     return None
 

@@ -86,9 +86,9 @@ def router_base():  return f"http://127.0.0.1:{cfg()['router_port']}"
 
 def _agent_endpoint(agent):
     c = cfg()
-    host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
     if agent == "claude-code":
-        return f"http://{host}:{c['panel_port']}"
+        return f"http://127.0.0.1:{c['panel_port']}"   # shim binds localhost only
+    host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
     return f"http://{host}:{c['router_port']}/v1"
 
 # ---------- router proxy ----------
@@ -321,7 +321,9 @@ def _shim_auth_ok(headers):
     key = c.get("router_api_key", "")
     if not key:
         return True
-    return headers.get("x-api-key") == key
+    if headers.get("x-api-key") == key:
+        return True
+    return headers.get("authorization", "") == f"Bearer {key}"
 
 
 def _router_openai(oai_body, stream=False):

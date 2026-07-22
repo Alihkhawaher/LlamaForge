@@ -58,6 +58,19 @@ class TestApply(unittest.TestCase):
         # our model line is commented out so it doesn't override
         self.assertIn('# model = "m"', text)
 
+    def test_backup_is_write_once_across_reapplies(self):
+        path = os.path.join(self.home, ".claude", "settings.json")
+        os.makedirs(os.path.dirname(path))
+        original = {"theme": "dark", "marker": "ORIGINAL", "env": {"KEEP": "1"}}
+        json.dump(original, open(path, "w"))
+        r1 = ag.apply("claude-code", self.home, "http://127.0.0.1:8090", "", "big1")
+        self.assertEqual(r1["action"], "merged")
+        r2 = ag.apply("claude-code", self.home, "http://127.0.0.1:8090", "", "big2")
+        self.assertEqual(r2["action"], "merged")
+        bak_data = json.load(open(r2["backup"], encoding="utf-8"))
+        self.assertEqual(bak_data["marker"], "ORIGINAL")
+        self.assertNotIn("ANTHROPIC_MODEL", bak_data.get("env", {}))
+
     def test_unknown_agent_raises_no_write(self):
         with self.assertRaises(ValueError):
             ag.apply("nope", self.home, "http://x", "", "m")

@@ -58,6 +58,13 @@ class TestAnthropicRoute(unittest.TestCase):
             self.assertFalse(server._shim_auth_ok({"x-api-key": "wrong"}))
             self.assertTrue(server._shim_auth_ok({"x-api-key": "secret"}))
 
+    def test_lan_bearer_token_accepted(self):
+        with mock.patch.object(server, "cfg", return_value={"router_host": "0.0.0.0",
+                               "router_api_key": "secret", "anthropic_default_model": "",
+                               "anthropic_shim_enabled": True, "router_port": 8080}):
+            self.assertTrue(server._shim_auth_ok({"authorization": "Bearer secret"}))
+            self.assertFalse(server._shim_auth_ok({"authorization": "Bearer wrong"}))
+
     def test_localhost_auth_open(self):
         with mock.patch.object(server, "cfg", return_value={"router_host": "127.0.0.1",
                                "router_api_key": "secret", "router_port": 8080}):
