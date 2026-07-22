@@ -128,6 +128,10 @@ _MARK_START = "<!-- llamaforge:start -->"
 _MARK_END = "<!-- llamaforge:end -->"
 
 
+def _sanitize(composed):
+    return (composed or "").replace(_MARK_START, "<!-- llamaforge start -->").replace(_MARK_END, "<!-- llamaforge end -->")
+
+
 def _backup(path):
     if os.path.exists(path):
         bak = path + ".llamaforge.bak"
@@ -138,7 +142,7 @@ def _backup(path):
 
 
 def export_agent_file(path, composed):
-    region = f"{_MARK_START}\n{(composed or '').strip()}\n{_MARK_END}\n"
+    region = f"{_MARK_START}\n{_sanitize(composed).strip()}\n{_MARK_END}\n"
     existed = os.path.exists(path)
     backup = _backup(path)
     text = ""
@@ -147,7 +151,7 @@ def export_agent_file(path, composed):
             text = f.read()
     if _MARK_START in text and _MARK_END in text:
         pre = text.split(_MARK_START, 1)[0]
-        post = text.split(_MARK_END, 1)[1].lstrip("\n")
+        post = text[text.rindex(_MARK_END) + len(_MARK_END):].lstrip("\n")
         new = pre + region + post
         action = "updated"
     else:
