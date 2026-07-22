@@ -375,9 +375,33 @@ def _router_openai(oai_body, stream=False):
         return 599, {"error": str(e)}
 
 
+def _inject_openai_system(body, composed):
+    if not composed:
+        return body
+    msgs = list(body.get("messages") or [])
+    if msgs and msgs[0].get("role") == "system":
+        merged = composed + "\n\n" + (msgs[0].get("content") or "")
+        msgs = [{"role": "system", "content": merged}] + msgs[1:]
+    else:
+        msgs = [{"role": "system", "content": composed}] + msgs
+    return {**body, "messages": msgs}
+
+
+def _inject_anthropic_system(body, composed):
+    if not composed:
+        return body
+    sys = body.get("system")
+    if isinstance(sys, str) and sys:
+        return {**body, "system": composed + "\n\n" + sys}
+    if isinstance(sys, list):
+        return {**body, "system": [{"type": "text", "text": composed}] + sys}
+    return {**body, "system": composed}
+
+
 def _anthropic_messages(body, headers):
     """Non-streaming /v1/messages: returns (status, anthropic_json)."""
     model = _resolve_anthropic_model(body.get("model", ""))
+    body = _inject_anthropic_system(body, wiki.compose(wiki.active_profile(model)))
     oai = anthropic_shim.to_openai_request({**body, "model": model, "stream": False})
     status, data = _router_openai(oai, stream=False)
     if status >= 400:
@@ -440,6 +464,7 @@ class H(BaseHTTPRequestHandler):
 
     def _anthropic_stream(self, body):
         model = _resolve_anthropic_model(body.get("model", ""))
+        body = _inject_anthropic_system(body, wiki.compose(wiki.active_profile(model)))
         oai = anthropic_shim.to_openai_request({**body, "model": model, "stream": True})
         oai["stream_options"] = {"include_usage": True}
         status, resp = _router_openai(oai, stream=True)
@@ -456,6 +481,30 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
         _write_anthropic_stream(write, model, status, resp)
+        if hasattr(resp, "close"):
+            try:
+                resp.close()
+            except Exception:
+                pass
+
+    def _openai_proxy_stream(self, body):
+        status, resp = _router_openai(body, stream=True)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        def write(b):
+            try:
+                self.wfile.write(b)
+                self.wfile.flush()
+            except Exception:
+                pass
+        if status >= 400:
+            write(("data: " + json.dumps(resp) + "\n\n").encode())
+            return
+        for line in resp:
+            write(line if line.endswith(b"\n") else line + b"\n")
         if hasattr(resp, "close"):
             try:
                 resp.close()
@@ -909,6 +958,16 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/wiki/export":
             out = _wiki_export(body)
             return self._send(400 if out.get("error") else 200, out)
+
+        if p == "/v1/chat/completions":
+            if not _shim_auth_ok({k.lower(): v for k, v in self.headers.items()}):
+                return self._send(401, {"error": {"message": "invalid key", "type": "authentication_error"}})
+            fwd = _inject_openai_system(body, wiki.compose(wiki.active_profile(body.get("model", ""))))
+            if fwd.get("stream"):
+                fwd.setdefault("stream_options", {"include_usage": True})
+                return self._openai_proxy_stream(fwd)
+            status, data = _router_openai(fwd, stream=False)
+            return self._send(status, data)
 
         return self._send(404, {"error": "not found"})
 
