@@ -7,7 +7,7 @@ detection, and drive scanning. Pure Python stdlib.
 import json, os, subprocess, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup
+import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup, wiki
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag
 
@@ -90,6 +90,21 @@ def _agent_endpoint(agent):
         return f"http://127.0.0.1:{c['panel_port']}"   # shim binds localhost only
     host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
     return f"http://{host}:{c['router_port']}/v1"
+
+_AGENT_CONTEXT_FILE = {"claude-code": ".claude/CLAUDE.md",
+                       "codex": ".codex/AGENTS.md", "pi": ".pi/AGENTS.md"}
+
+
+def _wiki_export(body):
+    agent = body.get("agent", "")
+    path = body.get("path", "")
+    composed = wiki.compose(body.get("profile", ""))
+    if not path:
+        rel = _AGENT_CONTEXT_FILE.get(agent)
+        if not rel:
+            return {"error": f"unknown agent: {agent}"}
+        path = os.path.join(os.path.expanduser("~"), *rel.split("/"))
+    return wiki.export_agent_file(path, composed)
 
 # ---------- router proxy ----------
 def router(path, method="GET", body=None, timeout=30):
@@ -555,6 +570,15 @@ class H(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, out)
+        if p == "/api/wiki/docs":
+            return self._send(200, {"docs": wiki.list_docs()})
+        if p == "/api/wiki/doc":
+            return self._send(200, {"name": qs.get("name", [""])[0],
+                                    "text": wiki.read_doc(qs.get("name", [""])[0])})
+        if p == "/api/wiki/profiles":
+            return self._send(200, {"profiles": wiki.get_profiles()})
+        if p == "/api/wiki/preview":
+            return self._send(200, {"text": wiki.compose(qs.get("profile", [""])[0])})
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -856,6 +880,35 @@ class H(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, out)
+
+        if p == "/api/wiki/doc":
+            try:
+                wiki.write_doc(body.get("name", ""), body.get("text", ""))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": True, "docs": wiki.list_docs()})
+        if p == "/api/wiki/doc/delete":
+            try:
+                ok = wiki.delete_doc(body.get("name", ""))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": ok, "docs": wiki.list_docs()})
+        if p == "/api/wiki/profile":
+            try:
+                profs = wiki.save_profile(body.get("name", ""), body.get("docs", []),
+                                          body.get("description", ""))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": True, "profiles": profs})
+        if p == "/api/wiki/profile/delete":
+            return self._send(200, {"ok": wiki.delete_profile(body.get("name", "")),
+                                    "profiles": wiki.get_profiles()})
+        if p == "/api/wiki/active":
+            wiki.set_active(body.get("model", ""), body.get("profile", ""))
+            return self._send(200, {"ok": True})
+        if p == "/api/wiki/export":
+            out = _wiki_export(body)
+            return self._send(400 if out.get("error") else 200, out)
 
         return self._send(404, {"error": "not found"})
 
