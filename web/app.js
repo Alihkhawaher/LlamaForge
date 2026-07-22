@@ -796,7 +796,8 @@ async function loadSetup(){
         <button class="ghost" id="btn-net-genkey" style="display:${net.host!=="127.0.0.1"?"":"none"}">Generate Key</button>
         <span class="msg" id="net-msg"></span>
       </div>
-    </div>`
+    </div>
+    <div id="agent-connect" class="card"></div>`
     +(vs.supported===false?"":`<div class="card"><h3>vLLM Backend (WSL2)</h3>
       <div class="kv"><span class="k">WSL2</span><span class="v ${vs.wsl.present?'ok':'bad'}">${vs.wsl.present?"installed":"NOT INSTALLED"}</span></div>
       ${vs.wsl.present?`<div class="kv"><span class="k">distro</span><span class="v">
@@ -845,6 +846,64 @@ async function loadSetup(){
     if(r.started){toast("vLLM install started","ok");pollVllmSetup();}else{msg.textContent="already running";}
   };
   if(vs.setup_job&&vs.setup_job.running)pollVllmSetup();
+  renderAgentConnect();
+}
+/* ---------- connect an agent ---------- */
+function agentModelOptions(sel){
+  const models=((STATE&&STATE.models)||[]).map(m=>m.id);
+  return models.map(id=>`<option value="${esc(id)}"${id===sel?" selected":""}>${esc(id)}</option>`).join("");
+}
+function renderAgentConnect(){
+  const host=$("#agent-connect"); if(!host) return;
+  setHTML(host,`<h3>Connect an agent</h3>
+    <div class="note">Point a coding agent at your local models. Claude Code uses the
+      Anthropic-compatible endpoint; Codex and pi.dev use the OpenAI-compatible router.</div>
+    <div style="margin-top:8px">
+      <select id="ac-agent">
+        <option value="claude-code">Claude Code</option>
+        <option value="codex">Codex</option>
+        <option value="pi">pi.dev</option>
+      </select>
+      <select id="ac-model">${agentModelOptions()}</select>
+      <select id="ac-small" hidden>${agentModelOptions()}</select>
+      <button id="ac-apply" class="primary">Apply</button>
+    </div>
+    <div id="ac-out" class="agent-out"></div>`);
+  const agentSel=$("#ac-agent"), smallSel=$("#ac-small");
+  function syncSmall(){ smallSel.hidden = agentSel.value!=="claude-code"; }
+  syncSmall();
+  agentSel.onchange=()=>{ syncSmall(); loadAgentConfig(); };
+  $("#ac-model").onchange=loadAgentConfig;
+  smallSel.onchange=loadAgentConfig;
+  $("#ac-apply").onclick=applyAgentConfig;
+  loadAgentConfig();
+}
+async function loadAgentConfig(){
+  const agentSel=$("#ac-agent"), modelSel=$("#ac-model"), smallSel=$("#ac-small");
+  if(!agentSel||!modelSel||!smallSel||!modelSel.value) {
+    setHTML($("#ac-out"),`<div class="note">No models available yet &mdash; scan for models above first.</div>`);
+    return;
+  }
+  const agent=agentSel.value, model=modelSel.value;
+  const small=smallSel.hidden?"":smallSel.value;
+  let q=`/api/agent/config?agent=${encodeURIComponent(agent)}&model=${encodeURIComponent(model)}`;
+  if(small) q+=`&small=${encodeURIComponent(small)}`;
+  const r=await api(q);
+  if(r.error){ setHTML($("#ac-out"),`<div class="note" style="color:var(--red)">${esc(r.error)}</div>`); return; }
+  const snip=(label,text)=>`<div class="slabel">${esc(label)}</div><div class="snip"><button class="qbtn scopy" data-copytext="${esc(text)}">Copy</button>${esc(text)}</div>`;
+  setHTML($("#ac-out"),
+    `<div class="note">Target: <b>${esc(r.target_path)}</b> &middot; endpoint <b>${esc(r.endpoint)}</b><br>${esc(r.instructions)}</div>`
+    + snip(r.target_path, r.content));
+}
+async function applyAgentConfig(){
+  const agentSel=$("#ac-agent"), modelSel=$("#ac-model"), smallSel=$("#ac-small");
+  if(!modelSel||!modelSel.value){ toast("No model selected","err"); return; }
+  const agent=agentSel.value, model=modelSel.value;
+  const small=smallSel.hidden?"":smallSel.value;
+  const r=await api("/api/agent/apply",{agent,model,small});
+  if(r.error){ toast(r.error,"err"); return; }
+  const bak=r.backup?` (backup: ${r.backup})`:"";
+  toast(`${r.action}: ${r.path}${bak}`,"ok");
 }
 async function scanDrives(){
   const msg=$("#scan-msg");msg.className="msg work";msg.textContent="scanning all drives (may take a moment)...";
