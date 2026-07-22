@@ -120,3 +120,42 @@ def set_active(model_id, profile):
         del a[model_id]
     c["wiki_active"] = a
     config.save(c)
+
+
+# ---------------- delivery A: agent-file export ----------------
+
+_MARK_START = "<!-- llamaforge:start -->"
+_MARK_END = "<!-- llamaforge:end -->"
+
+
+def _backup(path):
+    if os.path.exists(path):
+        bak = path + ".llamaforge.bak"
+        if not os.path.exists(bak):          # write-once: preserve the true original
+            shutil.copy2(path, bak)
+        return bak
+    return None
+
+
+def export_agent_file(path, composed):
+    region = f"{_MARK_START}\n{(composed or '').strip()}\n{_MARK_END}\n"
+    existed = os.path.exists(path)
+    backup = _backup(path)
+    text = ""
+    if existed:
+        with open(path, encoding="utf-8-sig") as f:
+            text = f.read()
+    if _MARK_START in text and _MARK_END in text:
+        pre = text.split(_MARK_START, 1)[0]
+        post = text.split(_MARK_END, 1)[1].lstrip("\n")
+        new = pre + region + post
+        action = "updated"
+    else:
+        sep = "\n" if (text and not text.endswith("\n")) else ""
+        gap = "\n" if text else ""
+        new = text + sep + gap + region
+        action = "inserted" if existed else "created"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    return {"ok": True, "path": path, "backup": backup, "action": action}
