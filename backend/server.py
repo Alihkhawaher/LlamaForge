@@ -7,7 +7,7 @@ detection, and drive scanning. Pure Python stdlib.
 import json, os, subprocess, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim
+import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag
 
@@ -83,6 +83,13 @@ _SCHEMA_KEY = None   # (server_bin, mtime) the cache was built from
 
 def cfg():          return config.load()
 def router_base():  return f"http://127.0.0.1:{cfg()['router_port']}"
+
+def _agent_endpoint(agent):
+    c = cfg()
+    host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
+    if agent == "claude-code":
+        return f"http://{host}:{c['panel_port']}"
+    return f"http://{host}:{c['router_port']}/v1"
 
 # ---------- router proxy ----------
 def router(path, method="GET", body=None, timeout=30):
@@ -536,6 +543,16 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"diag": diag.diagnose(router_log_tail(120), merged)})
         if p == "/api/presets":
             return self._send(200, {"presets": config.get_presets()})
+        if p == "/api/agent/config":
+            agent = qs.get("agent", [""])[0]
+            model = qs.get("model", [""])[0]
+            small = qs.get("small", [""])[0] or None
+            try:
+                out = agentsetup.generate(agent, _agent_endpoint(agent),
+                                          cfg().get("router_api_key", ""), model, small)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, out)
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -825,6 +842,18 @@ class H(BaseHTTPRequestHandler):
                 return self._anthropic_stream(body)   # implemented in Task 6
             status, out = _anthropic_messages(body, {k.lower(): v for k, v in self.headers.items()})
             return self._send(status, out)
+
+        if p == "/api/agent/apply":
+            agent = body.get("agent", "")
+            model = body.get("model", "")
+            small = body.get("small") or None
+            try:
+                out = agentsetup.apply(agent, os.path.expanduser("~"),
+                                       _agent_endpoint(agent),
+                                       cfg().get("router_api_key", ""), model, small)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, out)
 
         return self._send(404, {"error": "not found"})
 
