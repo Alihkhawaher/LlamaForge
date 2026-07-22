@@ -30,6 +30,9 @@ DEFAULTS = {
     "onboarded":   False,                     # first-run wizard shown once, then True
     "anthropic_default_model": "",           # fallback local model id for the Anthropic shim
     "anthropic_shim_enabled":  True,          # serve /v1/messages (Anthropic-compatible)
+    "wiki_dir":      "",                       # context-doc directory ("" -> <ROOT>/wiki)
+    "wiki_profiles": {},                       # {name: {"docs":[...], "description":str}}
+    "wiki_active":   {},                       # {model_id: profile_name}
 }
 
 def load():

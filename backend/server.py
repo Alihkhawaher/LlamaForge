@@ -7,7 +7,7 @@ detection, and drive scanning. Pure Python stdlib.
 import json, os, subprocess, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup
+import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup, wiki
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag
 
@@ -90,6 +90,21 @@ def _agent_endpoint(agent):
         return f"http://127.0.0.1:{c['panel_port']}"   # shim binds localhost only
     host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
     return f"http://{host}:{c['router_port']}/v1"
+
+_AGENT_CONTEXT_FILE = {"claude-code": ".claude/CLAUDE.md",
+                       "codex": ".codex/AGENTS.md", "pi": ".pi/AGENTS.md"}
+
+
+def _wiki_export(body):
+    agent = body.get("agent", "")
+    path = body.get("path", "")
+    composed = wiki.compose(body.get("profile", ""))
+    if not path:
+        rel = _AGENT_CONTEXT_FILE.get(agent)
+        if not rel:
+            return {"error": f"unknown agent: {agent}"}
+        path = os.path.join(os.path.expanduser("~"), *rel.split("/"))
+    return wiki.export_agent_file(path, composed)
 
 # ---------- router proxy ----------
 def router(path, method="GET", body=None, timeout=30):
@@ -360,9 +375,33 @@ def _router_openai(oai_body, stream=False):
         return 599, {"error": str(e)}
 
 
+def _inject_openai_system(body, composed):
+    if not composed:
+        return body
+    msgs = list(body.get("messages") or [])
+    if msgs and msgs[0].get("role") == "system":
+        merged = composed + "\n\n" + (msgs[0].get("content") or "")
+        msgs = [{"role": "system", "content": merged}] + msgs[1:]
+    else:
+        msgs = [{"role": "system", "content": composed}] + msgs
+    return {**body, "messages": msgs}
+
+
+def _inject_anthropic_system(body, composed):
+    if not composed:
+        return body
+    sys = body.get("system")
+    if isinstance(sys, str) and sys:
+        return {**body, "system": composed + "\n\n" + sys}
+    if isinstance(sys, list):
+        return {**body, "system": [{"type": "text", "text": composed}] + sys}
+    return {**body, "system": composed}
+
+
 def _anthropic_messages(body, headers):
     """Non-streaming /v1/messages: returns (status, anthropic_json)."""
     model = _resolve_anthropic_model(body.get("model", ""))
+    body = _inject_anthropic_system(body, wiki.compose(wiki.active_profile(model)))
     oai = anthropic_shim.to_openai_request({**body, "model": model, "stream": False})
     status, data = _router_openai(oai, stream=False)
     if status >= 400:
@@ -425,6 +464,7 @@ class H(BaseHTTPRequestHandler):
 
     def _anthropic_stream(self, body):
         model = _resolve_anthropic_model(body.get("model", ""))
+        body = _inject_anthropic_system(body, wiki.compose(wiki.active_profile(model)))
         oai = anthropic_shim.to_openai_request({**body, "model": model, "stream": True})
         oai["stream_options"] = {"include_usage": True}
         status, resp = _router_openai(oai, stream=True)
@@ -441,6 +481,30 @@ class H(BaseHTTPRequestHandler):
             except Exception:
                 pass
         _write_anthropic_stream(write, model, status, resp)
+        if hasattr(resp, "close"):
+            try:
+                resp.close()
+            except Exception:
+                pass
+
+    def _openai_proxy_stream(self, body):
+        status, resp = _router_openai(body, stream=True)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+
+        def write(b):
+            try:
+                self.wfile.write(b)
+                self.wfile.flush()
+            except Exception:
+                pass
+        if status >= 400:
+            write(("data: " + json.dumps(resp) + "\n\n").encode())
+            return
+        for line in resp:
+            write(line if line.endswith(b"\n") else line + b"\n")
         if hasattr(resp, "close"):
             try:
                 resp.close()
@@ -549,12 +613,27 @@ class H(BaseHTTPRequestHandler):
             agent = qs.get("agent", [""])[0]
             model = qs.get("model", [""])[0]
             small = qs.get("small", [""])[0] or None
+            inject = qs.get("inject", ["0"])[0] in ("1", "true")
+            c = cfg()
+            if inject and agent in ("codex", "pi"):
+                host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
+                endpoint = f"http://{host}:{c['panel_port']}/v1"
+            else:
+                endpoint = _agent_endpoint(agent)
             try:
-                out = agentsetup.generate(agent, _agent_endpoint(agent),
-                                          cfg().get("router_api_key", ""), model, small)
+                out = agentsetup.generate(agent, endpoint, c.get("router_api_key", ""), model, small, inject)
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, out)
+        if p == "/api/wiki/docs":
+            return self._send(200, {"docs": wiki.list_docs()})
+        if p == "/api/wiki/doc":
+            return self._send(200, {"name": qs.get("name", [""])[0],
+                                    "text": wiki.read_doc(qs.get("name", [""])[0])})
+        if p == "/api/wiki/profiles":
+            return self._send(200, {"profiles": wiki.get_profiles()})
+        if p == "/api/wiki/preview":
+            return self._send(200, {"text": wiki.compose(qs.get("profile", [""])[0])})
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -856,6 +935,45 @@ class H(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, out)
+
+        if p == "/api/wiki/doc":
+            try:
+                wiki.write_doc(body.get("name", ""), body.get("text", ""))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": True, "docs": wiki.list_docs()})
+        if p == "/api/wiki/doc/delete":
+            try:
+                ok = wiki.delete_doc(body.get("name", ""))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": ok, "docs": wiki.list_docs()})
+        if p == "/api/wiki/profile":
+            try:
+                profs = wiki.save_profile(body.get("name", ""), body.get("docs", []),
+                                          body.get("description", ""))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            return self._send(200, {"ok": True, "profiles": profs})
+        if p == "/api/wiki/profile/delete":
+            return self._send(200, {"ok": wiki.delete_profile(body.get("name", "")),
+                                    "profiles": wiki.get_profiles()})
+        if p == "/api/wiki/active":
+            wiki.set_active(body.get("model", ""), body.get("profile", ""))
+            return self._send(200, {"ok": True})
+        if p == "/api/wiki/export":
+            out = _wiki_export(body)
+            return self._send(400 if out.get("error") else 200, out)
+
+        if p == "/v1/chat/completions":
+            if not _shim_auth_ok({k.lower(): v for k, v in self.headers.items()}):
+                return self._send(401, {"error": {"message": "invalid key", "type": "authentication_error"}})
+            fwd = _inject_openai_system(body, wiki.compose(wiki.active_profile(body.get("model", ""))))
+            if fwd.get("stream"):
+                fwd.setdefault("stream_options", {"include_usage": True})
+                return self._openai_proxy_stream(fwd)
+            status, data = _router_openai(fwd, stream=False)
+            return self._send(status, data)
 
         return self._send(404, {"error": "not found"})
 

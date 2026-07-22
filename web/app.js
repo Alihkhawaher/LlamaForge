@@ -191,6 +191,7 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==="setup")loadSetup();
   if(t.dataset.tab==="discover")loadDiscover();
   if(t.dataset.tab==="stats")loadStats();
+  if(t.dataset.tab==="context")loadContext();
 });
 
 /* ---------- onboarding (getting-started checklist) ---------- */
@@ -549,7 +550,7 @@ document.addEventListener("keydown",e=>{
     return;
   }
   if(e.metaKey||e.ctrlKey||e.altKey)return;
-  if(/^[1-5]$/.test(e.key)){switchTab(["models","stats","discover","build","setup"][+e.key-1]);return;}
+  if(/^[1-6]$/.test(e.key)){switchTab(["models","stats","discover","build","setup","context"][+e.key-1]);return;}
   if($(".tab.active").dataset.tab!=="models"||!STATE)return;
   if(e.key==="/"){e.preventDefault();const inp=$("#model-search");if(inp)inp.focus();return;}
   if(e.key==="ArrowDown"||e.key==="j"){e.preventDefault();moveSel(1);return;}
@@ -644,6 +645,47 @@ document.addEventListener("click",async e=>{
   }catch(err){msg.className="msg err";msg.textContent=String(err);}
   btn.disabled=false;
 });
+
+/* ---------- context tab ---------- */
+async function loadContext(){
+  const v=$("#view-context");
+  const [d,pr]=await Promise.all([api("/api/wiki/docs"),api("/api/wiki/profiles")]);
+  const docs=d.docs||[], profiles=pr.profiles||{};
+  const models=((STATE&&STATE.models)||[]).map(m=>m.id);
+  setHTML(v,`
+    <div class="card"><h3>Context docs</h3>
+      <select id="wk-doc">${docs.map(n=>`<option>${esc(n)}</option>`).join("")}</select>
+      <button id="wk-new">New</button> <button id="wk-del">Delete</button>
+      <div><textarea id="wk-text" rows="12" style="width:100%"></textarea></div>
+      <button id="wk-save" class="primary">Save doc</button>
+    </div>
+    <div class="card"><h3>Profiles</h3>
+      <input id="wk-pname" placeholder="profile name">
+      <select id="wk-pdocs" multiple size="4">${docs.map(n=>`<option>${esc(n)}</option>`).join("")}</select>
+      <button id="wk-psave" class="primary">Save profile</button>
+      <div id="wk-plist" class="note">${Object.keys(profiles).map(esc).join(", ")||"(none)"}</div>
+    </div>
+    <div class="card"><h3>Active profile per model</h3>
+      <select id="wk-model">${models.map(m=>`<option>${esc(m)}</option>`).join("")}</select>
+      <select id="wk-active"><option value="">(none)</option>${Object.keys(profiles).map(n=>`<option>${esc(n)}</option>`).join("")}</select>
+      <button id="wk-setactive">Set active</button>
+    </div>
+    <div class="card"><h3>Export to agent file</h3>
+      <select id="wk-eagent"><option value="claude-code">Claude Code (CLAUDE.md)</option><option value="codex">Codex (AGENTS.md)</option><option value="pi">pi.dev (AGENTS.md)</option></select>
+      <select id="wk-eprofile">${Object.keys(profiles).map(n=>`<option>${esc(n)}</option>`).join("")}</select>
+      <input id="wk-epath" placeholder="(optional) project path; blank = global">
+      <button id="wk-export">Export</button>
+    </div>`);
+  const load=async()=>{const n=$("#wk-doc").value; if(n){const r=await api("/api/wiki/doc?name="+encodeURIComponent(n)); $("#wk-text").value=r.text||"";}};
+  load();
+  $("#wk-doc").onchange=load;
+  $("#wk-new").onclick=()=>{const n=prompt("Doc name (e.g. style)"); if(n){$("#wk-text").value=""; $("#wk-doc").insertAdjacentHTML("beforeend",`<option selected>${esc(n.endsWith(".md")?n:n+".md")}</option>`);}};
+  $("#wk-save").onclick=async()=>{const n=$("#wk-doc").value; if(!n){toast("Pick or create a doc","err");return;} await api("/api/wiki/doc",{name:n,text:$("#wk-text").value}); toast("Saved","ok"); loadContext();};
+  $("#wk-del").onclick=async()=>{const n=$("#wk-doc").value; if(n){await api("/api/wiki/doc/delete",{name:n}); toast("Deleted","ok"); loadContext();}};
+  $("#wk-psave").onclick=async()=>{const name=$("#wk-pname").value.trim(); const chosen=[...$("#wk-pdocs").selectedOptions].map(o=>o.value); if(!name){toast("Profile name required","err");return;} await api("/api/wiki/profile",{name,docs:chosen}); toast("Profile saved","ok"); loadContext();};
+  $("#wk-setactive").onclick=async()=>{await api("/api/wiki/active",{model:$("#wk-model").value,profile:$("#wk-active").value}); toast("Active profile set","ok");};
+  $("#wk-export").onclick=async()=>{const r=await api("/api/wiki/export",{agent:$("#wk-eagent").value,profile:$("#wk-eprofile").value,path:$("#wk-epath").value.trim()}); if(r.error){toast(r.error,"err");return;} toast(`${r.action}: ${r.path}`,"ok");};
+}
 
 /* ---------- build tab ---------- */
 let buildPoll=null;
