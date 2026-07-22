@@ -82,3 +82,92 @@ def generate(agent, endpoint, api_key, model, small_model=None):
     if agent == "pi":
         return _gen_pi(endpoint, api_key, model)
     raise ValueError(f"unknown agent: {agent}")
+
+
+# ---------------- apply (file I/O) ----------------
+
+def _target_path(agent, home):
+    if agent not in _PATHS:
+        raise ValueError(f"unknown agent: {agent}")
+    return os.path.join(home, *_PATHS[agent].split("/"))
+
+
+def _backup(path):
+    if os.path.exists(path):
+        bak = path + ".llamaforge.bak"
+        shutil.copy2(path, bak)
+        return bak
+    return None
+
+
+def _read_json(path):
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _deep_merge(base, patch):
+    for k, v in patch.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = copy.deepcopy(v)
+    return base
+
+
+def _merge_json(path, patch):
+    existed = os.path.exists(path)
+    data = _read_json(path) if existed else {}
+    if not isinstance(data, dict):
+        data = {}
+    _deep_merge(data, patch)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        json.dump(data, f, indent=2)
+    return "merged" if existed else "created"
+
+
+def _append_toml_block(path, block, top_level):
+    existed = os.path.exists(path)
+    text = ""
+    if existed:
+        with open(path, encoding="utf-8-sig") as f:
+            text = f.read()
+    if f"[model_providers.{PROVIDER}]" in text:
+        return "present"
+    out = []
+    if text and not text.endswith("\n"):
+        out.append("\n")
+    out.append("\n" + block + "\n")
+    for line in top_level:
+        key = line.split("=", 1)[0].strip()
+        if re.search(rf"(?m)^\s*{re.escape(key)}\s*=", text):
+            out.append("# " + line + "   # set this to use LlamaForge\n")
+        else:
+            out.append(line + "\n")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    mode = "a" if existed else "w"
+    with open(path, mode, encoding="utf-8", newline="") as f:
+        f.write("".join(out))
+    return "appended" if existed else "created"
+
+
+def apply(agent, home, endpoint, api_key, model, small_model=None):
+    path = _target_path(agent, home)          # raises ValueError on unknown agent
+    backup = _backup(path)
+    if agent == "claude-code":
+        action = _merge_json(path, {"env": {
+            "ANTHROPIC_BASE_URL": endpoint,
+            "ANTHROPIC_AUTH_TOKEN": api_key or "llamaforge",
+            "ANTHROPIC_MODEL": model,
+            "ANTHROPIC_SMALL_FAST_MODEL": small_model or model}})
+    elif agent == "pi":
+        action = _merge_json(path, {"providers": {PROVIDER: {
+            "baseUrl": endpoint, "api": "openai-completions",
+            "apiKey": api_key or "llamaforge", "models": [{"id": model}]}}})
+    elif agent == "codex":
+        action = _append_toml_block(path, _codex_provider_block(endpoint, api_key),
+                                    _codex_top_level(model))
+    return {"ok": True, "path": path, "backup": backup, "action": action}
