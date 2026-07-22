@@ -75,7 +75,9 @@ def _gen_pi(endpoint, api_key, model):
             "instructions": "Merge this into ~/.pi/agent/models.json."}
 
 
-def generate(agent, endpoint, api_key, model, small_model=None):
+def generate(agent, endpoint, api_key, model, small_model=None, inject=False):
+    # `inject` is honored by the caller choosing `endpoint` (proxy vs router);
+    # accepted here so callers can pass it explicitly.
     if agent == "claude-code":
         return _gen_claude(endpoint, api_key, model, small_model or model)
     if agent == "codex":

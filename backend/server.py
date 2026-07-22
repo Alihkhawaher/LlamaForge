@@ -613,9 +613,15 @@ class H(BaseHTTPRequestHandler):
             agent = qs.get("agent", [""])[0]
             model = qs.get("model", [""])[0]
             small = qs.get("small", [""])[0] or None
+            inject = qs.get("inject", ["0"])[0] in ("1", "true")
+            c = cfg()
+            if inject and agent in ("codex", "pi"):
+                host = router_ctl.lan_ip() if c.get("router_host", "127.0.0.1") != "127.0.0.1" else "127.0.0.1"
+                endpoint = f"http://{host}:{c['panel_port']}/v1"
+            else:
+                endpoint = _agent_endpoint(agent)
             try:
-                out = agentsetup.generate(agent, _agent_endpoint(agent),
-                                          cfg().get("router_api_key", ""), model, small)
+                out = agentsetup.generate(agent, endpoint, c.get("router_api_key", ""), model, small, inject)
             except ValueError as e:
                 return self._send(400, {"error": str(e)})
             return self._send(200, out)
