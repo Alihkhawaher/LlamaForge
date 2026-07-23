@@ -42,6 +42,7 @@
   --overlay:rgba(30,26,20,.35);--shadow:rgba(60,50,30,.18);
   --scan:transparent;--red-tint:rgba(213,64,58,.10);--amber-tint:rgba(200,140,0,.12);
   --faint-2:#8a938f;--overlay-72:rgba(30,26,20,.45);--shadow-70:rgba(60,50,30,.18);
+  --amber:#946600;--green:#0e7a4d;--red:#b6332c;--cyan:#40758f;
 }
 :root[data-theme="light"] body::after{opacity:0}                 /* drop CRT scanlines on light */
 :root[data-theme="light"] .pulse{box-shadow:none}                /* soften glow */
@@ -49,7 +50,8 @@
 :root[data-cvd="safe"]{
   --green:#009E73;--green-border:#1f5c48;
   --red:#D55E00;--red-tint:rgba(213,94,0,.12);
-  --amber:#E69F00;--amber-tint:rgba(230,159,0,.12);  /* status amber only */
+  --amber:#E69F00;--amber-tint:rgba(230,159,0,.12);  /* accent + status amber (single global token) */
+  --amber-dim:#8a5f00;
   --cyan:#56B4E9;--cyan-border:#2a5c73;
 }
 /* non-color cues: status must not depend on hue alone */
