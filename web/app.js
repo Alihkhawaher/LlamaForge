@@ -42,6 +42,26 @@ function initModeToggle(){
     b.onclick=()=>setMode(b.dataset.mode));
 }
 
+/* ---------- theme / colorblind-safe ---------- */
+function applyTheme(t){
+  document.documentElement.dataset.theme=(t==="light"?"light":"dark");
+  document.querySelectorAll("#theme-toggle button").forEach(b=>
+    b.classList.toggle("active", b.dataset.theme===document.documentElement.dataset.theme));
+}
+function applyCvd(on){
+  if(on) document.documentElement.dataset.cvd="safe"; else document.documentElement.removeAttribute("data-cvd");
+  const c=$("#cvd-check"); if(c) c.checked=!!on;
+}
+async function setTheme(t){ applyTheme(t); try{localStorage.setItem("theme",t);}catch(e){} try{await api("/api/config",{theme:t});}catch(e){} }
+async function setCvd(on){ applyCvd(on); try{localStorage.setItem("cvd",on?"1":"0");}catch(e){} try{await api("/api/config",{cvd:!!on});}catch(e){} }
+function initThemeControls(){
+  document.querySelectorAll("#theme-toggle button").forEach(b=>b.onclick=()=>setTheme(b.dataset.theme));
+  const c=$("#cvd-check"); if(c) c.onchange=()=>setCvd(c.checked);
+  // reflect the attributes already set by the <head> script
+  applyTheme(document.documentElement.dataset.theme);
+  applyCvd(document.documentElement.dataset.cvd==="safe");
+}
+
 /* ---------- first-run wizard ---------- */
 const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
   steps:["engine","hardware","model","tune","load"]};
@@ -569,6 +589,12 @@ async function refresh(silent){
     if(!SCHEMA||SCHEMA.error||!(SCHEMA.groups||[]).length) SCHEMA=await api("/api/schema");
     const s=await api("/api/state");STATE=s;renderGpus(s.gpus);renderModels();updateCmpRun();
     applyMode((s.onboarding&&s.onboarding.ui_mode)||"lite");
+    // config defaults (used only when this device hasn't chosen)
+    try{
+      const cfg=(s&&s.config)||{};
+      if(!localStorage.getItem("theme") && cfg.theme){ applyTheme(cfg.theme); }
+      if(localStorage.getItem("cvd")===null && cfg.cvd){ applyCvd(true); }
+    }catch(e){}
     wizMaybeStart(s);
     renderOnboarding(s);
     const plat=$("#platform");
@@ -1275,6 +1301,7 @@ setInterval(()=>{if($(".tab.active").dataset.tab==="stats")loadStats(true);},400
 function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+" LOCAL";}
 setInterval(clock,1000);clock();
 initModeToggle();
+initThemeControls();
 initWizard();
 (async()=>{SCHEMA=await api("/api/schema");await refresh();})();
 setInterval(()=>{if($(".tab.active").dataset.tab==="models")refresh(true);},4000);

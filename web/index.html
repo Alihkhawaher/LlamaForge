@@ -1,6 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+(function(){
+  try{
+    var t=localStorage.getItem("theme");
+    if(!t) t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
+    document.documentElement.dataset.theme=t;
+    if(localStorage.getItem("cvd")==="1") document.documentElement.dataset.cvd="safe";
+  }catch(e){}
+})();
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LLAMAFORGE</title>
@@ -215,6 +225,13 @@ body.mode-lite .advanced-only{display:none !important}
       <button data-mode="lite">Lite</button>
       <button data-mode="advanced">Advanced</button>
     </span>
+    <span class="mode-toggle" id="theme-toggle">
+      <button data-theme="light">Light</button>
+      <button data-theme="dark">Dark</button>
+    </span>
+    <label class="cvd-toggle" style="margin-left:10px;font-size:11px;color:var(--dim)">
+      <input type="checkbox" id="cvd-check"> Colorblind-safe
+    </label>
   </div>
   <div class="view active" id="view-models">
     <div id="onboard"></div>
