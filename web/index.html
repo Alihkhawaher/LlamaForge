@@ -22,6 +22,20 @@
   --scan:rgba(0,0,0,.16);--red-tint:rgba(255,92,87,.06);--amber-tint:rgba(255,176,0,.06);
   --faint-2:#465052;--overlay-72:rgba(0,0,0,.72);--shadow-70:rgba(0,0,0,.7);
 }
+:root[data-theme="light"]{
+  --bg:#f4f2ec;--panel:#faf8f3;--panel2:#ffffff;--hair:#d9d3c7;
+  --ink:#20262a;--ink-strong:#0c1013;--ink-hi:#141a1e;--dim:#5c666a;
+  --grid:#e7e2d7;--inset:#efece4;--seg-bg:#e2ddd1;
+  --code-bg:#f0ede5;--code-ink:#3a4448;--hair-hi:#c3bbaa;--hair-dim:#e0dacd;
+  --led-off:#c3bbaa;--faint:#8a938f;--amber-dim:#c98f14;
+  --cyan-border:#9ccdd6;--green-border:#a7d3ba;
+  --overlay:rgba(30,26,20,.35);--shadow:rgba(60,50,30,.18);
+  --scan:transparent;--red-tint:rgba(213,64,58,.10);--amber-tint:rgba(200,140,0,.12);
+  --faint-2:#8a938f;--overlay-72:rgba(30,26,20,.45);--shadow-70:rgba(60,50,30,.18);
+}
+:root[data-theme="light"] body::after{opacity:0}                 /* drop CRT scanlines on light */
+:root[data-theme="light"] .pulse{box-shadow:none}                /* soften glow */
+:root[data-theme="light"] .seg.on{box-shadow:none}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:14px}
 body{background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:44px 44px;min-height:100vh}
