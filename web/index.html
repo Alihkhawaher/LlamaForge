@@ -36,6 +36,20 @@
 :root[data-theme="light"] body::after{opacity:0}                 /* drop CRT scanlines on light */
 :root[data-theme="light"] .pulse{box-shadow:none}                /* soften glow */
 :root[data-theme="light"] .seg.on{box-shadow:none}
+:root[data-cvd="safe"]{
+  --green:#009E73;--green-border:#1f5c48;
+  --red:#D55E00;--red-tint:rgba(213,94,0,.12);
+  --amber:#E69F00;--amber-tint:rgba(230,159,0,.12);  /* status amber only */
+  --cyan:#56B4E9;--cyan-border:#2a5c73;
+}
+/* non-color cues: status must not depend on hue alone */
+:root[data-cvd="safe"] .msg.ok::before{content:"\2713 ";}     /* ✓ */
+:root[data-cvd="safe"] .msg.err::before{content:"\2717 ";}    /* ✗ */
+:root[data-cvd="safe"] .msg.work::before{content:"\2026 ";}   /* … */
+:root[data-cvd="safe"] #toast.ok::before{content:"\2713 ";}
+:root[data-cvd="safe"] #toast.err::before{content:"\2717 ";}
+:root[data-cvd="safe"] .pulse::after{content:"LIVE";font-size:9px;letter-spacing:.12em;margin-left:6px;color:var(--dim);vertical-align:middle}
+:root[data-cvd="safe"] .seg.hot::after{content:"!";font-size:9px;color:var(--on-accent);display:block;text-align:center;line-height:16px}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:14px}
 body{background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:44px 44px;min-height:100vh}
