@@ -42,6 +42,26 @@ function initModeToggle(){
     b.onclick=()=>setMode(b.dataset.mode));
 }
 
+/* ---------- theme / colorblind-safe ---------- */
+function applyTheme(t){
+  document.documentElement.dataset.theme=(t==="light"?"light":"dark");
+  document.querySelectorAll("#theme-toggle button").forEach(b=>
+    b.classList.toggle("active", b.dataset.theme===document.documentElement.dataset.theme));
+}
+function applyCvd(on){
+  if(on) document.documentElement.dataset.cvd="safe"; else document.documentElement.removeAttribute("data-cvd");
+  const c=$("#cvd-check"); if(c) c.checked=!!on;
+}
+async function setTheme(t){ applyTheme(t); try{localStorage.setItem("theme",t);}catch(e){} try{await api("/api/config",{theme:t});}catch(e){} }
+async function setCvd(on){ applyCvd(on); try{localStorage.setItem("cvd",on?"1":"0");}catch(e){} try{await api("/api/config",{cvd:!!on});}catch(e){} }
+function initThemeControls(){
+  document.querySelectorAll("#theme-toggle button").forEach(b=>b.onclick=()=>setTheme(b.dataset.theme));
+  const c=$("#cvd-check"); if(c) c.onchange=()=>setCvd(c.checked);
+  // reflect the attributes already set by the <head> script
+  applyTheme(document.documentElement.dataset.theme);
+  applyCvd(document.documentElement.dataset.cvd==="safe");
+}
+
 /* ---------- first-run wizard ---------- */
 const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
   steps:["engine","hardware","model","tune","load"]};
@@ -569,6 +589,12 @@ async function refresh(silent){
     if(!SCHEMA||SCHEMA.error||!(SCHEMA.groups||[]).length) SCHEMA=await api("/api/schema");
     const s=await api("/api/state");STATE=s;renderGpus(s.gpus);renderModels();updateCmpRun();
     applyMode((s.onboarding&&s.onboarding.ui_mode)||"lite");
+    // config defaults (used only when this device hasn't chosen)
+    try{
+      const cfg=(s&&s.config)||{};
+      if(!localStorage.getItem("theme") && cfg.theme){ applyTheme(cfg.theme); }
+      if(localStorage.getItem("cvd")===null && cfg.cvd){ applyCvd(true); }
+    }catch(e){}
     wizMaybeStart(s);
     renderOnboarding(s);
     const plat=$("#platform");
@@ -813,7 +839,7 @@ async function loadSetup(){
     </div>
     <div class="card"><h3>Startup</h3>
       <div class="kv"><span class="k">auto-load a model on launch</span>
-        <span class="v"><select id="auto-load" style="background:#0a0d0e;border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px">
+        <span class="v"><select id="auto-load" style="background:var(--inset);border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px">
           <option value="">none</option>
           ${((STATE&&STATE.models)||[]).map(m=>`<option value="${esc(m.id)}" ${((STATE.config||{}).auto_load_model===m.id)?"selected":""}>${esc(m.id)}</option>`).join("")}
         </select></span></div>
@@ -843,7 +869,7 @@ async function loadSetup(){
     +(vs.supported===false?"":`<div class="card"><h3>vLLM Backend (WSL2)</h3>
       <div class="kv"><span class="k">WSL2</span><span class="v ${vs.wsl.present?'ok':'bad'}">${vs.wsl.present?"installed":"NOT INSTALLED"}</span></div>
       ${vs.wsl.present?`<div class="kv"><span class="k">distro</span><span class="v">
-        <select id="vllm-distro" style="background:#0a0d0e;border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px">
+        <select id="vllm-distro" style="background:var(--inset);border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:6px">
         ${(vs.distros||[]).map(d=>`<option value="${esc(d.name)}" ${d.name===vs.chosen?"selected":""}>${esc(d.name)} (${esc(d.state)})</option>`).join("")}
         </select></span></div>
       <div class="kv"><span class="k">GPU passthrough</span><span class="v ${vs.gpu.present?'ok':'bad'}">${vs.gpu.present?esc((vs.gpu.info||"").split("\n")[0]||"detected"):"NOT DETECTED (check NVIDIA driver)"}</span></div>
@@ -1029,12 +1055,12 @@ function loadDiscover(){
   setHTML($("#view-discover"),`
     <div class="card"><h3>Discover models on huggingface.co</h3>
       <div class="toolbar">
-        <select id="hub-mode" style="background:#0a0d0e;border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:8px">
+        <select id="hub-mode" style="background:var(--inset);border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:8px">
           <option value="gguf">GGUF (llama.cpp)</option>
           <option value="safetensors">safetensors (vLLM)</option>
         </select>
         <input class="search" id="hub-q" placeholder="search models (e.g. qwen coder, gemma vision)... blank = most downloaded">
-        <select id="hub-sort" style="background:#0a0d0e;border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:8px">
+        <select id="hub-sort" style="background:var(--inset);border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:8px">
           <option value="downloads">most downloaded</option>
           <option value="lastModified">newest</option>
           <option value="likes">most liked</option>
@@ -1206,7 +1232,7 @@ async function resetStats(){
 function fmtNum(n){n=Number(n)||0;return n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(Math.round(n));}
 function fmtDur(s){s=Math.round(Number(s)||0);const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:m?`${m}m`:`${s}s`;}
 function fmtAgo(ts){if(!ts)return "never";const d=Date.now()/1000-ts;return d<60?"just now":d<3600?Math.floor(d/60)+"m ago":d<86400?Math.floor(d/3600)+"h ago":Math.floor(d/86400)+"d ago";}
-function statCard(label,val){return `<div class="gpu"><div class="stats" style="margin:0"><span>${esc(label)}</span></div><div style="font-family:var(--disp);font-weight:600;color:#fff;font-size:22px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(val)}</div></div>`;}
+function statCard(label,val){return `<div class="gpu"><div class="stats" style="margin:0"><span>${esc(label)}</span></div><div style="font-family:var(--disp);font-weight:600;color:var(--ink-strong);font-size:22px;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(val)}</div></div>`;}
 function sortStats(c){statsSort=c;loadStats(true);}
 async function loadStats(silent){
   const v=$("#view-stats");
@@ -1275,6 +1301,7 @@ setInterval(()=>{if($(".tab.active").dataset.tab==="stats")loadStats(true);},400
 function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+" LOCAL";}
 setInterval(clock,1000);clock();
 initModeToggle();
+initThemeControls();
 initWizard();
 (async()=>{SCHEMA=await api("/api/schema");await refresh();})();
 setInterval(()=>{if($(".tab.active").dataset.tab==="models")refresh(true);},4000);
