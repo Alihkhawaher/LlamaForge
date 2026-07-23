@@ -33,6 +33,8 @@ DEFAULTS = {
     "wiki_dir":      "",                       # context-doc directory ("" -> <ROOT>/wiki)
     "wiki_profiles": {},                       # {name: {"docs":[...], "description":str}}
     "wiki_active":   {},                       # {model_id: profile_name}
+    "theme":         "",                       # "" = follow OS/localStorage; "light"|"dark"
+    "cvd":           False,                     # colorblind-safe palette + non-color cues
 }
 
 def load():
