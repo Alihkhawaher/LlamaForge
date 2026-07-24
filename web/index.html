@@ -48,7 +48,6 @@
   --amber-text:#946600;--cyan-text:#40758f;--amber-status:#946600;
 }
 :root[data-theme="light"] body::after{opacity:0}                 /* drop CRT scanlines on light */
-:root[data-theme="light"] .pulse{box-shadow:none}                /* soften glow */
 :root[data-theme="light"] .seg.on{box-shadow:none}
 :root[data-cvd="safe"]{
   --green:#009E73;--green-border:#1f5c48;
@@ -63,23 +62,15 @@
 :root[data-cvd="safe"] .msg.work::before{content:"\2026 ";}   /* … */
 :root[data-cvd="safe"] #toast.ok::before{content:"\2713 ";}
 :root[data-cvd="safe"] #toast.err::before{content:"\2717 ";}
-:root[data-cvd="safe"] .pulse::after{content:"LIVE";font-size:9px;letter-spacing:.12em;margin-left:6px;color:var(--dim);vertical-align:middle}
 :root[data-cvd="safe"] .seg.hot::after{content:"!";font-size:9px;color:var(--on-accent);display:block;text-align:center;line-height:16px}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:14px}
 body{background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:44px 44px;min-height:100vh}
 body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:99;background:repeating-linear-gradient(0deg,var(--scan) 0,var(--scan) 1px,transparent 1px,transparent 3px);mix-blend-mode:multiply;opacity:.5}
 .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 90px}
-header{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--hair);padding-bottom:14px;margin-bottom:8px;flex-wrap:wrap;gap:12px}
-.brand{display:flex;align-items:center;gap:14px}
 .logo{width:34px;height:34px;border:1px solid var(--amber);position:relative;flex:none}
 .logo::before{content:"";position:absolute;left:6px;right:6px;top:50%;height:2px;transform:translateY(-1px);background:var(--amber);box-shadow:0 -8px 0 var(--amber),0 8px 0 var(--amber)}
-h1{font-family:var(--disp);font-weight:700;letter-spacing:.14em;font-size:20px;margin:0;color:var(--ink-strong)}
-h1 span{color:var(--amber-text)}
 .sub{color:var(--dim);font-size:11px;letter-spacing:.26em;text-transform:uppercase;margin-top:3px}
-.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite;margin-right:7px}
-@keyframes blink{50%{opacity:.35}}
-.tab{}
 :root{--nav-w:200px}
 body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;margin:0;transition:grid-template-columns .14s ease}
 :root[data-nav="rail"]{--nav-w:52px}

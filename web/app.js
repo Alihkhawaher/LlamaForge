@@ -73,6 +73,7 @@ function toggleNav(){ setNav(document.documentElement.dataset.nav==="rail" ? "ex
 function showNavHint(){
   try{ if(localStorage.getItem("navHint")==="seen") return; }catch(e){}
   if(document.documentElement.dataset.nav!=="rail") return;
+  if(window.innerWidth<=900) return;
   const h=$("#nav-hint"); if(h){ h.hidden=false; setTimeout(dismissNavHint, 8000); }
 }
 function dismissNavHint(){
@@ -677,8 +678,6 @@ async function refresh(silent){
     }catch(e){}
     wizMaybeStart(s);
     renderOnboarding(s);
-    const plat=$("#platform");
-    if(plat&&s.platform)plat.textContent=" · "+s.platform;
     const vlog=$("#vllm-log-details");
     if(vlog&&s.vllm_supported===false)vlog.style.display="none";
     restoreEditorState(snap);
