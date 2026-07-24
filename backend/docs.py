@@ -139,3 +139,76 @@ def render(md):
         para.append(line.strip()); i += 1
     flush()
     return "\n".join(out)
+
+
+# ---------- content model ----------
+_FM = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.S)
+_SECTION_ORDER = {"getting-started": 0, "guides": 1, "reference": 2,
+                  "faq": 3, "troubleshooting": 4}
+_HEADING = re.compile(r"(?m)^(#{1,4})\s+(.*)$")
+
+
+def parse_frontmatter(md):
+    m = _FM.match(md.replace("\r\n", "\n"))
+    if not m:
+        return {}, md
+    meta = {}
+    for line in m.group(1).split("\n"):
+        if ":" in line:
+            k, v = line.split(":", 1)
+            meta[k.strip()] = v.strip()
+    return meta, m.group(2)
+
+
+def _pages():
+    d = content_dir()
+    res = []
+    if not os.path.isdir(d):
+        return res
+    for fn in sorted(os.listdir(d)):
+        if not fn.endswith(".md") or fn.startswith("_"):
+            continue
+        meta, body = parse_frontmatter(_read(os.path.join(d, fn)))
+        res.append({"slug": fn[:-3], "title": meta.get("title", fn[:-3]),
+                    "section": meta.get("section", "guides"),
+                    "order": int(meta.get("order", "0") or 0), "_body": body})
+    res.sort(key=lambda p: (_SECTION_ORDER.get(p["section"], 9), p["order"], p["title"]))
+    return res
+
+
+def list_pages():
+    return [{k: p[k] for k in ("slug", "title", "section", "order")} for p in _pages()]
+
+
+def page(slug):
+    for p in _pages():
+        if p["slug"] == slug:
+            toc = [{"level": len(m.group(1)), "text": m.group(2).strip(),
+                    "id": _slug(m.group(2).strip())}
+                   for m in _HEADING.finditer(p["_body"])]
+            return {"title": p["title"], "html": render(p["_body"]), "toc": toc}
+    return None
+
+
+def search_index():
+    return [{"slug": p["slug"], "title": p["title"],
+             "headings": [m.group(2).strip() for m in _HEADING.finditer(p["_body"])]}
+            for p in _pages()]
+
+
+def manifest():
+    secs, order = {}, []
+    for p in list_pages():
+        sid = p["section"]
+        if sid not in secs:
+            secs[sid] = {"id": sid, "title": sid.replace("-", " ").title(), "pages": []}
+            order.append(sid)
+        secs[sid]["pages"].append({"slug": p["slug"], "title": p["title"]})
+    order.sort(key=lambda s: _SECTION_ORDER.get(s, 9))
+    return {"sections": [secs[s] for s in order], "search": search_index()}
+
+
+def _safe_img(name):
+    if not name or "/" in name or "\\" in name or ".." in name or os.path.isabs(name):
+        raise ValueError("bad image name: %r" % name)
+    return os.path.join(content_dir(), "img", name)

@@ -74,5 +74,50 @@ class TestRenderBlocks(unittest.TestCase):
                          '<div class="admon admon-note"><p>heads up</p></div>')
 
 
+import os, tempfile
+
+
+class TestContentModel(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.dir, "img"))
+        self._orig = docs.content_dir
+        docs.content_dir = lambda: self.dir
+
+    def tearDown(self):
+        docs.content_dir = self._orig
+
+    def _w(self, name, text):
+        with open(os.path.join(self.dir, name), "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def test_frontmatter(self):
+        meta, body = docs.parse_frontmatter(
+            "---\ntitle: Hi\nsection: reference\norder: 2\n---\n# Body")
+        self.assertEqual(meta["title"], "Hi")
+        self.assertEqual(meta["section"], "reference")
+        self.assertEqual(body.strip(), "# Body")
+
+    def test_list_pages_ordering_and_skip_underscore(self):
+        self._w("b.md", "---\ntitle: B\nsection: guides\norder: 2\n---\nx")
+        self._w("a.md", "---\ntitle: A\nsection: getting-started\norder: 1\n---\nx")
+        self._w("_style.md", "---\ntitle: S\nsection: guides\norder: 0\n---\nx")
+        slugs = [p["slug"] for p in docs.list_pages()]
+        self.assertEqual(slugs, ["a", "b"])          # getting-started before guides; _ skipped
+
+    def test_page_toc_and_missing(self):
+        self._w("p.md", "---\ntitle: P\nsection: guides\norder: 1\n---\n# H1\n## H2")
+        pg = docs.page("p")
+        self.assertEqual(pg["title"], "P")
+        self.assertEqual([t["text"] for t in pg["toc"]], ["H1", "H2"])
+        self.assertIsNone(docs.page("nope"))
+
+    def test_safe_img_rejects_traversal(self):
+        for bad in ("../x", "a/b", "a\\b", "/etc/x"):
+            with self.assertRaises(ValueError):
+                docs._safe_img(bad)
+        self.assertTrue(docs._safe_img("ok.png").endswith(os.path.join("img", "ok.png")))
+
+
 if __name__ == "__main__":
     unittest.main()
