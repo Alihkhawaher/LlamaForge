@@ -204,6 +204,22 @@ body.mode-lite .advanced-only{display:none !important}
 .wizard-nav{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
 .wizard-step h2{margin:0 0 8px;color:var(--amber-text);font-family:var(--disp);letter-spacing:.08em;text-transform:uppercase;font-size:15px}
 .wizard-rationale{font-size:12px;color:var(--dim)}
+.docs-wrap{display:grid;grid-template-columns:200px 1fr 180px;gap:16px}
+.docs-nav nav a,.docs-pagetoc a{display:block;color:var(--dim);text-decoration:none;padding:2px 0;font-size:12px}
+.docs-nav nav a.active,.docs-pagetoc a:hover,.docs-nav nav a:hover{color:var(--amber)}
+.docs-nav .sec{color:var(--ink);font-weight:600;margin:10px 0 4px;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.docs-body{color:var(--ink);line-height:1.6;max-width:760px}
+.docs-body h1,.docs-body h2,.docs-body h3{color:var(--ink-strong);margin:18px 0 8px}
+.docs-body pre{background:var(--code-bg);color:var(--code-ink);padding:10px;overflow:auto;border:1px solid var(--hair)}
+.docs-body code{background:var(--code-bg);color:var(--code-ink);padding:1px 4px}
+.docs-body pre code{padding:0}
+.docs-body table{border-collapse:collapse;margin:10px 0}
+.docs-body th,.docs-body td{border:1px solid var(--hair);padding:4px 8px;text-align:left}
+.docs-body img{max-width:100%;border:1px solid var(--hair)}
+.docs-body a{color:var(--cyan)}
+.admon{border-left:3px solid var(--amber);background:var(--panel);padding:8px 12px;margin:10px 0}
+.admon-warning{border-left-color:var(--red)}
+.admon-tip{border-left-color:var(--green)}
 </style>
 </head>
 <body>
@@ -225,6 +241,7 @@ body.mode-lite .advanced-only{display:none !important}
     <div class="tab" data-tab="build">Build / Update</div>
     <div class="tab" data-tab="setup">Setup</div>
     <div class="tab" data-tab="context">Context</div>
+    <div class="tab" data-tab="help">Help</div>
     <span class="mode-toggle" id="mode-toggle">
       <button data-mode="lite">Lite</button>
       <button data-mode="advanced">Advanced</button>
@@ -263,6 +280,13 @@ body.mode-lite .advanced-only{display:none !important}
   <div class="view" id="view-build"><div class="skel">LOADING BUILD STATUS...</div></div>
   <div class="view" id="view-setup"><div class="skel">PROBING SYSTEM...</div></div>
   <div class="view" id="view-context"><div class="skel">LOADING CONTEXT...</div></div>
+  <div class="view" id="view-help">
+    <div class="docs-wrap">
+      <aside class="docs-nav"><input id="docs-search" class="search" placeholder="Search docs…"><nav id="docs-toc-nav"></nav></aside>
+      <article id="docs-body" class="docs-body"></article>
+      <aside id="docs-page-toc" class="docs-pagetoc"></aside>
+    </div>
+  </div>
   <div class="credit">
     LlamaForge is an independent GUI wrapper. Inference by
     <a href="https://github.com/ggml-org/llama.cpp" target="_blank">llama.cpp</a>

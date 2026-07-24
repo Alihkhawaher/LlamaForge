@@ -212,7 +212,42 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==="discover")loadDiscover();
   if(t.dataset.tab==="stats")loadStats();
   if(t.dataset.tab==="context")loadContext();
+  if(t.dataset.tab==="help")loadDocs();
 });
+
+/* ---------- in-app Help (docs) ---------- */
+let DOCS = null;
+async function loadDocs(){
+  if(DOCS) return;
+  DOCS = await api("/api/docs");
+  const nav = $("#docs-toc-nav");
+  nav.innerHTML = DOCS.sections.map(s =>
+    `<div class="sec">${esc(s.title)}</div>` +
+    s.pages.map(p => `<a href="#" data-slug="${esc(p.slug)}">${esc(p.title)}</a>`).join("")
+  ).join("");
+  nav.querySelectorAll("a[data-slug]").forEach(a =>
+    a.onclick = e => { e.preventDefault(); openDoc(a.dataset.slug); });
+  $("#docs-search").oninput = e => filterDocs(e.target.value.toLowerCase());
+  if(DOCS.sections[0] && DOCS.sections[0].pages[0]) openDoc(DOCS.sections[0].pages[0].slug);
+}
+async function openDoc(slug){
+  const pg = await api("/api/docs/page?slug=" + encodeURIComponent(slug));
+  if(!pg || pg.error) return;
+  $("#docs-body").innerHTML = pg.html;                 // trusted local renderer output
+  $("#docs-page-toc").innerHTML = (pg.toc || [])
+    .map(t => `<a href="#${esc(t.id)}" style="padding-left:${(t.level-1)*8}px">${esc(t.text)}</a>`).join("");
+  document.querySelectorAll("#docs-toc-nav a").forEach(a =>
+    a.classList.toggle("active", a.dataset.slug === slug));
+  $("#docs-body").scrollTop = 0;
+}
+function filterDocs(q){
+  const hits = new Set(DOCS.search
+    .filter(p => p.title.toLowerCase().includes(q) ||
+                 p.headings.some(h => h.toLowerCase().includes(q)))
+    .map(p => p.slug));
+  document.querySelectorAll("#docs-toc-nav a[data-slug]").forEach(a =>
+    a.style.display = (!q || hits.has(a.dataset.slug)) ? "" : "none");
+}
 
 /* ---------- onboarding (getting-started checklist) ---------- */
 function renderOnboarding(s){
@@ -570,7 +605,7 @@ document.addEventListener("keydown",e=>{
     return;
   }
   if(e.metaKey||e.ctrlKey||e.altKey)return;
-  if(/^[1-6]$/.test(e.key)){switchTab(["models","stats","discover","build","setup","context"][+e.key-1]);return;}
+  if(/^[1-7]$/.test(e.key)){switchTab(["models","stats","discover","build","setup","context","help"][+e.key-1]);return;}
   if($(".tab.active").dataset.tab!=="models"||!STATE)return;
   if(e.key==="/"){e.preventDefault();const inp=$("#model-search");if(inp)inp.focus();return;}
   if(e.key==="ArrowDown"||e.key==="j"){e.preventDefault();moveSel(1);return;}
