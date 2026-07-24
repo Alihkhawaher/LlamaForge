@@ -29,6 +29,14 @@ class TestRenderInline(unittest.TestCase):
     def test_code_span_content_escaped(self):
         self.assertEqual(docs.render("`<b>`"), "<p><code>&lt;b&gt;</code></p>")
 
+    def test_quote_in_image_alt_escaped(self):
+        html = docs.render('![x"onerror="alert(1)](u)')
+        self.assertNotIn('"onerror="', html)      # quote cannot break out of the attribute
+
+    def test_quote_in_link_escaped(self):
+        html = docs.render('[t"x](u)')
+        self.assertNotIn('t"x', html)
+
 
 if __name__ == "__main__":
     unittest.main()

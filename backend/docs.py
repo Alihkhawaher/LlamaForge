@@ -28,7 +28,7 @@ _ITAL = re.compile(r"\*([^*]+)\*")
 
 
 def _inline(text):
-    out = html.escape(text, quote=False)          # escape first (strict/safe)
+    out = html.escape(text, quote=True)           # escape first (strict/safe)
     codes = []
 
     def _stash(m):
