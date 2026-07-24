@@ -283,8 +283,8 @@ body.mode-lite .advanced-only{display:none !important}
 @media (max-width:600px){
   body.app{grid-template-columns:1fr}        /* content full-width; sidebar overlays */
   #sidebar{position:fixed;left:0;top:0;height:100vh;width:220px;z-index:41;transform:translateX(-100%);
-    transition:transform .16s ease;align-items:stretch}
-  body.drawer-open #sidebar{transform:none}
+    transition:transform .16s ease}
+  body.drawer-open #sidebar{transform:none;align-items:stretch}
   body.drawer-open #sidebar .brand-word,
   body.drawer-open #sidebar .navitem .label{display:inline}   /* drawer shows full labels */
   body.drawer-open #sidebar .navitem{justify-content:flex-start;padding:9px 10px;gap:12px}
