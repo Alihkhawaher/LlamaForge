@@ -62,6 +62,29 @@ function initThemeControls(){
   applyCvd(document.documentElement.dataset.cvd==="safe");
 }
 
+/* ---------- sidebar rail / expanded ---------- */
+function setNav(state){
+  const s = state==="expanded" ? "expanded" : "rail";
+  document.documentElement.dataset.nav = s;
+  try{ localStorage.setItem("nav", s); }catch(e){}
+  const b=$("#nav-toggle"); if(b) b.textContent = s==="rail" ? "›" : "‹";  // › / ‹
+}
+function toggleNav(){ setNav(document.documentElement.dataset.nav==="rail" ? "expanded" : "rail"); }
+// TEMPORARY stub: dismissNavHint is implemented in Task 4 (nav hint tooltip). Remove this
+// no-op once Task 4 lands and defines the real function.
+function dismissNavHint(){}
+function initSidebar(){
+  const b=$("#nav-toggle"); if(b) b.onclick=()=>{ toggleNav(); dismissNavHint(); };
+  // rail settings cycle (reuse existing setters)
+  const rm=$("#rail-mode"); if(rm) rm.onclick=()=>setMode(document.body.classList.contains("mode-lite")?"advanced":"lite");
+  const rt=$("#rail-theme"); if(rt) rt.onclick=()=>setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark");
+  const rc=$("#rail-cvd"); if(rc) rc.onclick=()=>setCvd(document.documentElement.dataset.cvd!=="safe");
+  // reflect cvd "on" state on the rail icon
+  const refl=()=>{ const on=document.documentElement.dataset.cvd==="safe"; if(rc) rc.classList.toggle("on", on); };
+  refl();
+  setNav(document.documentElement.dataset.nav||"rail");   // sync chevron glyph
+}
+
 /* ---------- first-run wizard ---------- */
 const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
   steps:["engine","hardware","model","tune","load"]};
@@ -1342,6 +1365,7 @@ function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+
 setInterval(clock,1000);clock();
 initModeToggle();
 initThemeControls();
+initSidebar();
 initWizard();
 updatePageTitle();
 /* deep-linkable tabs: #<tab> in the URL activates that tab (docs deep-links + tools/shoot.py).

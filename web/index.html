@@ -8,6 +8,7 @@
     if(!t) t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";
     document.documentElement.dataset.theme=t;
     if(localStorage.getItem("cvd")==="1") document.documentElement.dataset.cvd="safe";
+    document.documentElement.dataset.nav = localStorage.getItem("nav")||"rail";
   }catch(e){}
 })();
 </script>
@@ -80,7 +81,19 @@ h1 span{color:var(--amber-text)}
 @keyframes blink{50%{opacity:.35}}
 .tab{}
 :root{--nav-w:200px}
-body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;margin:0}
+body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;margin:0;transition:grid-template-columns .14s ease}
+:root[data-nav="rail"]{--nav-w:52px}
+:root[data-nav="rail"] #sidebar{padding:14px 6px;align-items:center}
+:root[data-nav="rail"] .brand-word{display:none}
+:root[data-nav="rail"] .navitem .label{display:none}
+:root[data-nav="rail"] .navitem{justify-content:center;padding:9px 0;gap:0}
+:root[data-nav="rail"] .side-settings .mode-toggle,
+:root[data-nav="rail"] .side-settings .cvd-toggle{display:none}
+:root[data-nav="rail"] .settings-rail{display:flex}
+:root[data-nav="rail"] .nav-toggle{margin-left:0}
+/* expanded hides the rail settings icons */
+:root:not([data-nav="rail"]) .settings-rail{display:none}
+#sidebar,.navitem,.brand-word{transition:none}
 #sidebar{position:sticky;top:0;align-self:start;height:100vh;display:flex;flex-direction:column;
   border-right:1px solid var(--hair);background:var(--panel);padding:14px 8px;gap:4px;overflow:hidden}
 .side-head{display:flex;align-items:center;gap:10px;padding:4px 6px 12px;border-bottom:1px solid var(--hair);margin-bottom:8px}
