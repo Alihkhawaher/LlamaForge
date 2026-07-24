@@ -4,7 +4,7 @@
 Imports backend/docs.py so the site and the in-app Help tab share ONE renderer.
 Pure stdlib. Output defaults to site/. Run: python tools/build_docs.py
 """
-import os, shutil, sys
+import html, os, shutil, sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "backend"))
@@ -43,10 +43,10 @@ def _nav(pages, current):
         secs.setdefault(p["section"], []).append(p)
     parts = []
     for sec, items in secs.items():
-        parts.append('<div class="sec">%s</div>' % sec.replace("-", " ").title())
+        parts.append('<div class="sec">%s</div>' % html.escape(sec.replace("-", " ").title()))
         for p in items:
             cls = ' class="active"' if p["slug"] == current else ""
-            parts.append('<a href="%s.html"%s>%s</a>' % (p["slug"], cls, p["title"]))
+            parts.append('<a href="%s.html"%s>%s</a>' % (p["slug"], cls, html.escape(p["title"])))
     return "".join(parts)
 
 
@@ -56,16 +56,15 @@ def build(out_dir, content=None):
     written = []
     for p in pages:
         pg = docs.page(p["slug"])
-        htmlpage = _TEMPLATE.format(title=pg["title"], nav=_nav(pages, p["slug"]), body=pg["html"])
+        htmlpage = _TEMPLATE.format(title=html.escape(pg["title"]), nav=_nav(pages, p["slug"]), body=pg["html"])
         dest = os.path.join(out_dir, p["slug"] + ".html")
         with open(dest, "w", encoding="utf-8") as f:
             f.write(htmlpage)
         written.append(dest)
-    # landing page: first page, or a generated index
-    landing = pages[0]["slug"] + ".html" if pages else None
+    # landing page: if no page is named "index", copy the first page as index.html
     index = os.path.join(out_dir, "index.html")
-    if pages and os.path.basename(landing) != "index.html":
-        shutil.copyfile(os.path.join(out_dir, landing), index)
+    if pages and not any(p["slug"] == "index" for p in pages):
+        shutil.copyfile(os.path.join(out_dir, pages[0]["slug"] + ".html"), index)
         written.append(index)
     # copy images
     img_src = os.path.join(docs.content_dir(), "img")

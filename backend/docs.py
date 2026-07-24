@@ -27,6 +27,13 @@ _BOLD = re.compile(r"\*\*([^*]+)\*\*")
 _ITAL = re.compile(r"\*([^*]+)\*")
 
 
+def _safe_url(u):
+    first = u.split("/", 1)[0]
+    if u.lower().startswith(("http://", "https://", "mailto:")) or ":" not in first:
+        return u                     # http(s)/mailto, or a relative URL (slug.md, docs/img/x, #anchor)
+    return "#"                       # neutralize javascript:, data:, etc.
+
+
 def _inline(text):
     out = html.escape(text, quote=True)           # escape first (strict/safe)
     codes = []
@@ -36,8 +43,8 @@ def _inline(text):
         return "\x00%d\x00" % (len(codes) - 1)
 
     out = _CODE.sub(_stash, out)                   # protect code spans
-    out = _IMG.sub(lambda m: '<img alt="%s" src="%s">' % (m.group(1), m.group(2)), out)
-    out = _LINK.sub(lambda m: '<a href="%s">%s</a>' % (m.group(2), m.group(1)), out)
+    out = _IMG.sub(lambda m: '<img alt="%s" src="%s">' % (m.group(1), _safe_url(m.group(2))), out)
+    out = _LINK.sub(lambda m: '<a href="%s">%s</a>' % (_safe_url(m.group(2)), m.group(1)), out)
     out = _BOLD.sub(r"<strong>\1</strong>", out)
     out = _ITAL.sub(r"<em>\1</em>", out)
     out = re.sub(r"\x00(\d+)\x00",
@@ -216,6 +223,11 @@ def manifest():
 
 
 def _safe_img(name):
-    if not name or "/" in name or "\\" in name or ".." in name or os.path.isabs(name):
+    if (not name or "/" in name or "\\" in name or ".." in name
+            or ":" in name or os.path.isabs(name)):
         raise ValueError("bad image name: %r" % name)
-    return os.path.join(content_dir(), "img", name)
+    base = os.path.realpath(os.path.join(content_dir(), "img"))
+    full = os.path.realpath(os.path.join(base, name))
+    if os.path.commonpath([base, full]) != base:
+        raise ValueError("bad image name: %r" % name)
+    return full

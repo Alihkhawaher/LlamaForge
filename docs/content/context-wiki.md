@@ -12,7 +12,7 @@ A working directory of markdown docs, grouped into named profiles, that you can 
 
 The wiki is a plain folder of `.md` files (`backend/wiki.py`, default `<ROOT>/wiki`, overridable via the `wiki_dir` config key). Each doc is a single markdown file; names are sanitized (`_safe_name()`) so a doc can never write or read outside that directory — no path separators, no `.`/`..`.
 
-Docs are grouped into **profiles**: a profile is a name plus an ordered list of doc filenames plus a description, stored in the `wiki_profiles` config key. `compose(profile_name)` turns a profile into one block of text: it reads each doc in the profile's list order, skips empty ones, and wraps each with a `## <doc-name-without-.md>` heading before joining them with blank lines. `compose()` returns `""` for an unknown or empty profile name — there is no error path, just no context.
+Docs are grouped into **profiles**: a profile is a name plus an ordered list of doc filenames plus a description, stored in the `wiki_profiles` config key. `compose(profile_name)` turns a profile into one block of text: it reads each doc in the profile's list order, skips empty ones, and wraps each with a `## <doc-name-without-.md>` heading before joining them with blank lines. `compose()` returns `""` for an unknown or empty profile name — there is no error path, only no context.
 
 Each model can have its own **active profile** (`wiki_active`, a `{model_id: profile_name}` map set via `set_active()`). `active_profile(model_id)` looks up that model's entry, or returns `""` if none is set. This is the piece that makes injection per-model: two models can carry different context, or none at all.
 

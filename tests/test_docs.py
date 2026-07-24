@@ -37,6 +37,16 @@ class TestRenderInline(unittest.TestCase):
         html = docs.render('[t"x](u)')
         self.assertNotIn('t"x', html)
 
+    def test_javascript_url_neutralized(self):
+        out = docs.render("[x](javascript:alert(1))")
+        self.assertNotIn("javascript:", out)
+        self.assertIn('href="#"', out)
+
+    def test_relative_and_http_urls_preserved(self):
+        self.assertIn('href="install.md"', docs.render("[a](install.md)"))
+        self.assertIn('src="docs/img/x.png"', docs.render("![a](docs/img/x.png)"))
+        self.assertIn('href="https://x.io"', docs.render("[a](https://x.io)"))
+
 
 class TestRenderBlocks(unittest.TestCase):
     def test_fenced_code_with_lang(self):
@@ -117,6 +127,11 @@ class TestContentModel(unittest.TestCase):
             with self.assertRaises(ValueError):
                 docs._safe_img(bad)
         self.assertTrue(docs._safe_img("ok.png").endswith(os.path.join("img", "ok.png")))
+
+    def test_safe_img_rejects_windows_drive_and_ads(self):
+        for bad in ("C:evil", "c:\\x", "a:b", "x:stream"):
+            with self.assertRaises(ValueError):
+                docs._safe_img(bad)
 
     def test_non_numeric_order_does_not_crash(self):
         self._w("bad.md", "---\ntitle: Bad\nsection: guides\norder: two\n---\nx")
