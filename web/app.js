@@ -70,9 +70,15 @@ function setNav(state){
   const b=$("#nav-toggle"); if(b) b.textContent = s==="rail" ? "›" : "‹";  // › / ‹
 }
 function toggleNav(){ setNav(document.documentElement.dataset.nav==="rail" ? "expanded" : "rail"); }
-// TEMPORARY stub: dismissNavHint is implemented in Task 4 (nav hint tooltip). Remove this
-// no-op once Task 4 lands and defines the real function.
-function dismissNavHint(){}
+function showNavHint(){
+  try{ if(localStorage.getItem("navHint")==="seen") return; }catch(e){}
+  if(document.documentElement.dataset.nav!=="rail") return;
+  const h=$("#nav-hint"); if(h){ h.hidden=false; setTimeout(dismissNavHint, 8000); }
+}
+function dismissNavHint(){
+  const h=$("#nav-hint"); if(h) h.hidden=true;
+  try{ localStorage.setItem("navHint","seen"); }catch(e){}
+}
 function initSidebar(){
   const b=$("#nav-toggle"); if(b) b.onclick=()=>{ toggleNav(); dismissNavHint(); };
   // rail settings cycle (reuse existing setters)
@@ -83,6 +89,7 @@ function initSidebar(){
   const refl=()=>{ const on=document.documentElement.dataset.cvd==="safe"; if(rc) rc.classList.toggle("on", on); };
   refl();
   setNav(document.documentElement.dataset.nav||"rail");   // sync chevron glyph
+  showNavHint();
 }
 
 /* ---------- first-run wizard ---------- */
@@ -241,6 +248,7 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==="context")loadContext();
   if(t.dataset.tab==="help")loadDocs();
   updatePageTitle();
+  dismissNavHint();
 });
 
 /* ---------- in-app Help (docs) ---------- */

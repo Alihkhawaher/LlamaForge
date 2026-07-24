@@ -102,6 +102,11 @@ body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;ma
 .nav-toggle{margin-left:auto;background:transparent;border:1px solid var(--hair);color:var(--dim);
   cursor:pointer;width:22px;height:22px;border-radius:4px;font:inherit;line-height:1}
 .nav-toggle:hover{color:var(--amber);border-color:var(--amber)}
+.nav-hint{position:absolute;left:56px;top:14px;z-index:50;background:var(--panel2);color:var(--ink);
+  border:1px solid var(--amber);border-radius:6px;padding:6px 10px;font-size:11px;white-space:nowrap;
+  box-shadow:0 4px 14px var(--shadow)}
+.nav-hint[hidden]{display:none}
+:root[data-nav="rail"] #sidebar{overflow:visible}
 .side-nav{display:flex;flex-direction:column;gap:2px}
 .navitem{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:6px;cursor:pointer;
   color:var(--dim);font-family:var(--disp);font-weight:600;letter-spacing:.10em;text-transform:uppercase;font-size:12px;
@@ -269,6 +274,7 @@ body.mode-lite .advanced-only{display:none !important}
     <div class="logo"></div>
     <span class="brand-word">LLAMA<span>FORGE</span></span>
     <button id="nav-toggle" class="nav-toggle" title="Collapse / expand" aria-label="Toggle sidebar">‹</button>
+    <div id="nav-hint" class="nav-hint" hidden>Click to expand &rsaquo;</div>
   </div>
   <div class="side-nav">
     <div class="tab navitem active" data-tab="models"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg><span class="label">Models</span></div>
