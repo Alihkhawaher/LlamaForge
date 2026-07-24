@@ -1,0 +1,138 @@
+---
+title: HTTP API
+section: reference
+order: 3
+---
+
+# HTTP API
+
+The LlamaForge dashboard backend (`backend/server.py`) listens on `panel_port` (default `8090`) and serves the web UI, the `/api/*` management API, and two agent-facing, provider-compatible chat endpoints. All routes below are read directly from `do_GET`/`do_POST` in `backend/server.py`.
+
+`/api/*` request/response bodies are JSON. POST handlers read the body with `json.loads(self.rfile.read(n) or "{}")`, so a POST with no body is treated as `{}`.
+
+> [!NOTE]
+> If vLLM support isn't available on the host, every route is first checked by `_vllm_gate()`; requests to `/api/vllm/*` paths return an error response instead of reaching the normal handler.
+
+## Agent-facing endpoints
+
+These are the endpoints external coding agents (Claude Code, Codex, etc.) talk to — see `backend/agentsetup.py` for the config generators that point agents at them.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/v1/messages` | Anthropic Messages API-compatible endpoint. Requires `x-api-key` auth (`_shim_auth_ok`) and `anthropic_shim_enabled: true` in `config.json` (the default). Supports `"stream": true` (SSE) via `_anthropic_stream`. Internally translated to the OpenAI-shaped request and forwarded to the router (`_anthropic_messages` -> `_router_openai`). |
+| POST | `/v1/messages/count_tokens` | Anthropic-compatible token-count estimate for a would-be `/v1/messages` request. Same auth/enable gating as `/v1/messages`. |
+| POST | `/v1/chat/completions` | OpenAI Chat Completions-compatible endpoint. Requires auth via `_shim_auth_ok`. Injects the active wiki context profile as a system message (`_inject_openai_system`) before forwarding to the router. Supports `"stream": true`. |
+| POST | `/api/load` | Load a model into the router. Body: `{"model": "<id>"}`. Proxies to the router's `/models/load`. |
+| POST | `/api/unload` | Unload a model from the router. Body: `{"model": "<id>"}`. Proxies to the router's `/models/unload`. |
+| POST | `/api/unload_all` | Unload every currently loaded/loading model (except the router's `default` entry). |
+
+## Model and preset management
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/state` | Full dashboard state: models (llama.cpp + vLLM merged), GPU telemetry, platform, current `config.json`, and onboarding status. |
+| GET | `/api/schema` | The knob schema (available `llama-server` flags), built from `llama-server --help`. |
+| POST | `/api/save` | Save per-model knob overrides into `models.ini` (`config.set_keys`). Reloads the running model if it was loaded. |
+| GET | `/api/presets` | List saved knob presets from `config.json`. |
+| POST | `/api/presets/save` | Save a named knob preset. |
+| POST | `/api/presets/delete` | Delete a named preset. |
+| POST | `/api/presets/apply` | Apply a saved preset's knobs to a model, same reload behavior as `/api/save`. |
+| GET | `/api/model/metadata` | GGUF metadata for a model id (query param `model`). |
+| GET | `/api/model/diag` | Diagnostic read of the router log against a model's merged (`[*]` + per-model) settings (query param `model`). |
+| POST | `/api/autotune/recommend` | Recommend knob values for a model given hardware constraints. |
+| POST | `/api/autotune/refine` | Refine a prior autotune recommendation. |
+| GET | `/api/scan/missing` | List `models.ini` entries whose GGUF file no longer exists on disk. |
+| POST | `/api/scan` | Scan directories (`model_dirs` by default) for GGUF files. |
+| POST | `/api/scan/apply` | Register scanned entries into `models.ini` and reapply ctx-size defaults. |
+| POST | `/api/scan/prune` | Remove `models.ini` sections whose file is missing (unloading first if loaded). |
+
+## Build, setup, and hardware
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/setup` | Prerequisite tool status (git/cmake/ninja/compiler/CUDA) plus hardware recommendation. |
+| POST | `/api/setup/install` | Install a missing prerequisite tool (Windows/macOS only). |
+| GET | `/api/gpus` | Live GPU telemetry via `nvidia-smi`. |
+| GET | `/api/build/info` | Current `llama.cpp` commit, available updates, and recommended/saved CMake flags. |
+| GET | `/api/build/log` | Tail of the build log plus builder state. |
+| POST | `/api/build/start` | Start (re)building `llama.cpp` with the given (or saved/recommended) CMake flags. |
+
+## Model Hub (download)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/hub/search` | Search Hugging Face for GGUF repos, annotated with what's already installed. |
+| POST | `/api/hub/files` | List a repo's files/quantizations, sized against available VRAM. |
+| POST | `/api/hub/download` | Start downloading a model (and optional mmproj) from the Hub. |
+| GET | `/api/hub/progress` | Current download progress. |
+| POST | `/api/hub/cancel` / `/api/hub/pause` / `/api/hub/resume` | Control the active download. |
+| POST | `/api/hub/add` | Register a finished manual/download-dir GGUF into `models.ini`. |
+
+## Network and router control
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/network` | Current router host/port, whether an API key is set, LAN IP, and whether the router is running. |
+| POST | `/api/network` | Update `router_host`/`router_api_key` in `config.json` and restart the router (`router_ctl.restart`). |
+| GET | `/api/router/log` | Tail of the router's log. |
+| GET | `/api/stats` | Usage stats summary. |
+| POST | `/api/stats/reset` | Reset usage stats. |
+| POST | `/api/config` | Merge the request body into `config.json` and save. |
+
+> [!NOTE]
+> There is no `GET /api/config` route; current config is read via `GET /api/state`'s `config` field instead.
+
+## vLLM (WSL) management
+
+Only reachable when vLLM support is available on the host (`_vllm_gate`).
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/vllm/setup` | vLLM/WSL install status plus any running setup job. |
+| POST | `/api/vllm/setup/install` | Kick off the vLLM install script inside WSL. |
+| POST | `/api/vllm/update` | Run the vLLM update script inside WSL. |
+| GET | `/api/vllm/log` | Tail of the vLLM process log. |
+| GET | `/api/vllm/schema` | vLLM knob schema. |
+| GET | `/api/vllm/version` | Installed vs. latest PyPI vLLM version. |
+| POST | `/api/vllm/load` / `/api/vllm/unload` | Load/unload a registered vLLM model. |
+| POST | `/api/vllm/save` | Save a vLLM model's settings, restarting it if currently running. |
+| POST | `/api/vllm/hub/search` | Search Hugging Face for vLLM-servable repos. |
+| POST | `/api/vllm/hub/info` | Repo info sized against available VRAM. |
+| POST | `/api/vllm/hub/download` | Start a vLLM model download. |
+| GET | `/api/vllm/hub/progress` | Download progress. |
+| POST | `/api/vllm/hub/register` | Register a downloaded model into the vLLM registry. |
+| POST | `/api/vllm/delete` | Delete a downloaded vLLM model and deregister it. |
+
+## Agent config and context wiki
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/agent/config` | Generate connection config (endpoint, key, model) for a named coding agent (query params `agent`, `model`, `small`, `inject`). |
+| POST | `/api/agent/apply` | Write the generated agent config to disk on the machine running the dashboard. |
+| GET | `/api/wiki/docs` | List context-wiki documents. |
+| GET | `/api/wiki/doc` | Read a single document (query param `name`). |
+| POST | `/api/wiki/doc` | Create/update a document. |
+| POST | `/api/wiki/doc/delete` | Delete a document. |
+| GET | `/api/wiki/profiles` | List saved context profiles. |
+| POST | `/api/wiki/profile` | Save a named profile (its doc list + description). |
+| POST | `/api/wiki/profile/delete` | Delete a profile. |
+| GET | `/api/wiki/preview` | Preview the composed text for a profile (query param `profile`). |
+| POST | `/api/wiki/active` | Set the active profile for a model. |
+| POST | `/api/wiki/export` | Export composed context (e.g. to an agent's own file format). |
+
+## Docs viewer
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/docs` | Manifest of documentation pages (sections/order/titles). |
+| GET | `/api/docs/page` | Rendered HTML for one page (query param `slug`); 404 if the slug doesn't exist. |
+| GET | `/docs/img/<name>` | Serve an image referenced from a docs page, path-safety-checked by `docs._safe_img`. |
+
+## Static / UI
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` or `/index.html` | The dashboard's single HTML page. |
+| GET | `/app.js` | The dashboard's client-side JavaScript. |
+
+See also [config.json Reference](config.md) for the settings `/api/config` and `/api/network` write, and [models.ini Format](models-ini.md) for the file `/api/save`, `/api/scan/apply`, `/api/scan/prune`, and `/api/hub/add` mutate.
