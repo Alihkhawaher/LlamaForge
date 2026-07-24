@@ -1338,6 +1338,10 @@ setInterval(clock,1000);clock();
 initModeToggle();
 initThemeControls();
 initWizard();
+/* deep-linkable tabs: #<tab> in the URL activates that tab (docs deep-links + tools/shoot.py).
+   Runs after the .tab onclick handlers are wired above. */
+window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(h)switchTab(h);});
+if(location.hash)switchTab(location.hash.slice(1));
 (async()=>{SCHEMA=await api("/api/schema");await refresh();})();
 setInterval(()=>{if($(".tab.active").dataset.tab==="models")refresh(true);},4000);
 
