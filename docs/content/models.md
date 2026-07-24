@@ -31,7 +31,7 @@ Because the flag count is entirely a function of your `llama-server` build, Llam
 
 ## Screenshot
 
-![Models tab](../img/models.png)
+![Models tab](docs/img/models.png)
 
 ## Reference
 

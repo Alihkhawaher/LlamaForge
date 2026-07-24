@@ -19,7 +19,7 @@ The Build tab reports two independent things: how your local `llama_src` checkou
 - On **macOS**, it returns `GGML_METAL=ON` and `GGML_NATIVE=ON`, with a note that Metal uses unified memory as VRAM. No CUDA branch runs on Mac.
 - If one or more **NVIDIA GPUs** are detected, it sets `GGML_CUDA=ON`, and if compute capabilities were readable, `CMAKE_CUDA_ARCHITECTURES` to the sorted, deduplicated list of detected architectures (e.g. `86;89`). It also sets `GGML_CUDA_FA_ALL_QUANTS=ON` to enable flash attention across all quantized KV cache combinations.
 - If **no NVIDIA GPU** is detected, it configures a CPU-only build (no CUDA flags) and notes that fact.
-- On Windows/Linux either way, it always sets `GGML_NATIVE=ON`. If the CPU looks like it supports AVX-512 (`avx512_hint` — on Linux read from real CPU flags; on Windows a name-based heuristic for recent Ryzen 9000-series, Xeon, and Threadripper parts), it additionally sets `GGML_AVX512=ON`, `GGML_AVX512_VNNI=ON`, `GGML_AVX512_VBMI=ON`, and `GGML_AVX512_BF16=ON`.
+- On Windows/Linux either way, it always sets `GGML_NATIVE=ON`. If the CPU looks like it supports AVX-512 (`avx512_hint` — on Linux read from real CPU flags; on Windows a name-based heuristic for Ryzen 7/9 (7000- and 9000-series), Xeon, and Threadripper parts), it additionally sets `GGML_AVX512=ON`, `GGML_AVX512_VNNI=ON`, `GGML_AVX512_VBMI=ON`, and `GGML_AVX512_BF16=ON`.
 - It also returns a `runtime` recommendation (not a CMake flag, but a suggested per-model default): `n-gpu-layers=99` and `flash-attn=on` when a GPU (or Mac Metal) is present, `n-gpu-layers=0` and `flash-attn=off` on CPU-only machines.
 
 These flags are shown as pills on the Build tab and used as the default for a rebuild; if you've previously saved custom flags (`cmake_flags` in `config.json`), those are shown instead until you clear them.
@@ -37,7 +37,7 @@ A rebuild (`BuildManager.run_build()`) runs in a background thread: optionally `
 
 ## Screenshot
 
-![Build tab](../img/build.png)
+![Build tab](docs/img/build.png)
 
 ## Reference
 

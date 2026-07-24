@@ -34,7 +34,7 @@ Each result also carries platform tags (Windows/Linux/macOS) — GGUF runs on al
 
 ## Screenshot
 
-![Discover tab](../img/discover.png)
+![Discover tab](docs/img/discover.png)
 
 ## Reference
 
