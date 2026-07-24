@@ -35,6 +35,7 @@ DEFAULTS = {
     "wiki_active":   {},                       # {model_id: profile_name}
     "theme":         "",                       # "" = follow OS/localStorage; "light"|"dark"
     "cvd":           False,                     # colorblind-safe palette + non-color cues
+    "docs_dir":      "",                        # "" = <ROOT>/docs/content
 }
 
 def load():
