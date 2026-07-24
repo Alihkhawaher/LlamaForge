@@ -118,6 +118,15 @@ class TestContentModel(unittest.TestCase):
                 docs._safe_img(bad)
         self.assertTrue(docs._safe_img("ok.png").endswith(os.path.join("img", "ok.png")))
 
+    def test_non_numeric_order_does_not_crash(self):
+        self._w("bad.md", "---\ntitle: Bad\nsection: guides\norder: two\n---\nx")
+        self._w("ok.md", "---\ntitle: OK\nsection: guides\norder: 1\n---\nx")
+        slugs = [p["slug"] for p in docs.list_pages()]   # must not raise
+        self.assertIn("bad", slugs)
+        self.assertIn("ok", slugs)
+        bad = next(p for p in docs.list_pages() if p["slug"] == "bad")
+        self.assertEqual(bad["order"], 0)                # malformed order falls back to 0
+
 
 if __name__ == "__main__":
     unittest.main()

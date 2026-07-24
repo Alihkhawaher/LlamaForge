@@ -148,6 +148,13 @@ _SECTION_ORDER = {"getting-started": 0, "guides": 1, "reference": 2,
 _HEADING = re.compile(r"(?m)^(#{1,4})\s+(.*)$")
 
 
+def _int(v, default=0):
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def parse_frontmatter(md):
     m = _FM.match(md.replace("\r\n", "\n"))
     if not m:
@@ -171,7 +178,7 @@ def _pages():
         meta, body = parse_frontmatter(_read(os.path.join(d, fn)))
         res.append({"slug": fn[:-3], "title": meta.get("title", fn[:-3]),
                     "section": meta.get("section", "guides"),
-                    "order": int(meta.get("order", "0") or 0), "_body": body})
+                    "order": _int(meta.get("order", 0)), "_body": body})
     res.sort(key=lambda p: (_SECTION_ORDER.get(p["section"], 9), p["order"], p["title"]))
     return res
 
