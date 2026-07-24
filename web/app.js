@@ -204,6 +204,10 @@ function initWizard(){
 }
 
 function switchTab(name){const t=$(`.tab[data-tab="${name}"]`);if(t)t.click();}
+function updatePageTitle(){
+  const a=document.querySelector(".navitem.active .label");
+  const t=$("#page-title"); if(a&&t) t.textContent=a.textContent;
+}
 $$(".tab").forEach(t=>t.onclick=()=>{
   $$(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));$("#view-"+t.dataset.tab).classList.add("active");
@@ -213,6 +217,7 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==="stats")loadStats();
   if(t.dataset.tab==="context")loadContext();
   if(t.dataset.tab==="help")loadDocs();
+  updatePageTitle();
 });
 
 /* ---------- in-app Help (docs) ---------- */
@@ -1338,6 +1343,7 @@ setInterval(clock,1000);clock();
 initModeToggle();
 initThemeControls();
 initWizard();
+updatePageTitle();
 /* deep-linkable tabs: #<tab> in the URL activates that tab (docs deep-links + tools/shoot.py).
    Runs after the .tab onclick handlers are wired above. */
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(h)switchTab(h);});

@@ -78,10 +78,31 @@ h1 span{color:var(--amber-text)}
 .sub{color:var(--dim);font-size:11px;letter-spacing:.26em;text-transform:uppercase;margin-top:3px}
 .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:blink 2s infinite;margin-right:7px}
 @keyframes blink{50%{opacity:.35}}
-.tabs{display:flex;gap:2px;margin:18px 0 22px;border-bottom:1px solid var(--hair)}
-.tab{font-family:var(--disp);font-weight:600;letter-spacing:.14em;text-transform:uppercase;font-size:12px;color:var(--dim);padding:11px 20px;cursor:pointer;border:1px solid transparent;border-bottom:none;background:transparent}
-.tab:hover{color:var(--ink)}
-.tab.active{color:var(--on-accent);background:var(--amber);border-color:var(--amber)}
+.tab{}
+:root{--nav-w:200px}
+body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;margin:0}
+#sidebar{position:sticky;top:0;align-self:start;height:100vh;display:flex;flex-direction:column;
+  border-right:1px solid var(--hair);background:var(--panel);padding:14px 8px;gap:4px;overflow:hidden}
+.side-head{display:flex;align-items:center;gap:10px;padding:4px 6px 12px;border-bottom:1px solid var(--hair);margin-bottom:8px}
+.brand-word{font-family:var(--disp);font-weight:700;letter-spacing:.12em;color:var(--ink-strong);white-space:nowrap}
+.brand-word span{color:var(--amber)}
+.nav-toggle{margin-left:auto;background:transparent;border:1px solid var(--hair);color:var(--dim);
+  cursor:pointer;width:22px;height:22px;border-radius:4px;font:inherit;line-height:1}
+.nav-toggle:hover{color:var(--amber);border-color:var(--amber)}
+.side-nav{display:flex;flex-direction:column;gap:2px}
+.navitem{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:6px;cursor:pointer;
+  color:var(--dim);font-family:var(--disp);font-weight:600;letter-spacing:.10em;text-transform:uppercase;font-size:12px;
+  border:1px solid transparent;white-space:nowrap}
+.navitem:hover{color:var(--ink);background:var(--inset)}
+.navitem.active{background:var(--amber);color:var(--on-accent);border-color:var(--amber)}
+.navitem .ico{flex:none;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center}
+.side-spacer{flex:1}
+.side-settings{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--hair)}
+.side-settings .mode-toggle{margin-left:0}
+#content{min-width:0;padding:0 26px 26px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 0;border-bottom:1px solid var(--hair);margin-bottom:16px;position:sticky;top:0;background:var(--bg);z-index:5}
+#page-title{font-family:var(--disp);font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-strong);font-size:15px}
 .view{display:none}.view.active{display:block}
 .gpus{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
 @media(max-width:720px){.gpus{grid-template-columns:1fr}}
@@ -223,26 +244,24 @@ body.mode-lite .advanced-only{display:none !important}
 .admon-tip{border-left-color:var(--green)}
 </style>
 </head>
-<body>
-<div class="wrap">
-  <header>
-    <div class="brand">
-      <div class="logo"></div>
-      <div>
-        <h1>LLAMA<span>FORGE</span></h1>
-        <div class="sub"><span class="pulse"></span>a control panel for llama.cpp<span id="platform"></span></div>
-      </div>
-    </div>
-    <div class="sub" id="clock"></div>
-  </header>
-  <div class="tabs">
-    <div class="tab active" data-tab="models">Models</div>
-    <div class="tab" data-tab="stats">Stats</div>
-    <div class="tab" data-tab="discover">Discover</div>
-    <div class="tab" data-tab="build">Build / Update</div>
-    <div class="tab" data-tab="setup">Setup</div>
-    <div class="tab" data-tab="context">Context</div>
-    <div class="tab" data-tab="help">Help</div>
+<body class="app">
+<nav id="sidebar">
+  <div class="side-head">
+    <div class="logo"></div>
+    <span class="brand-word">LLAMA<span>FORGE</span></span>
+    <button id="nav-toggle" class="nav-toggle" title="Collapse / expand" aria-label="Toggle sidebar">‹</button>
+  </div>
+  <div class="side-nav">
+    <div class="tab navitem active" data-tab="models"><span class="ico"></span><span class="label">Models</span></div>
+    <div class="tab navitem" data-tab="stats"><span class="ico"></span><span class="label">Stats</span></div>
+    <div class="tab navitem" data-tab="discover"><span class="ico"></span><span class="label">Discover</span></div>
+    <div class="tab navitem" data-tab="build"><span class="ico"></span><span class="label">Build / Update</span></div>
+    <div class="tab navitem" data-tab="setup"><span class="ico"></span><span class="label">Setup</span></div>
+    <div class="tab navitem" data-tab="context"><span class="ico"></span><span class="label">Context</span></div>
+    <div class="tab navitem" data-tab="help"><span class="ico"></span><span class="label">Help</span></div>
+  </div>
+  <div class="side-spacer"></div>
+  <div class="side-settings">
     <span class="mode-toggle" id="mode-toggle">
       <button data-mode="lite">Lite</button>
       <button data-mode="advanced">Advanced</button>
@@ -251,10 +270,15 @@ body.mode-lite .advanced-only{display:none !important}
       <button data-theme="light">Light</button>
       <button data-theme="dark">Dark</button>
     </span>
-    <label class="cvd-toggle" style="margin-left:10px;font-size:11px;color:var(--dim)">
-      <input type="checkbox" id="cvd-check"> Colorblind-safe
-    </label>
+    <label class="cvd-toggle"><input type="checkbox" id="cvd-check"> Colorblind-safe</label>
   </div>
+</nav>
+<main id="content">
+  <div class="topbar">
+    <span id="page-title">Models</span>
+    <span class="sub" id="clock"></span>
+  </div>
+  <div class="views">
   <div class="view active" id="view-models">
     <div id="onboard"></div>
     <div class="gpus" id="gpus"></div>
@@ -288,12 +312,13 @@ body.mode-lite .advanced-only{display:none !important}
       <aside id="docs-page-toc" class="docs-pagetoc"></aside>
     </div>
   </div>
+  </div>
   <div class="credit">
     LlamaForge is an independent GUI wrapper. Inference by
     <a href="https://github.com/ggml-org/llama.cpp" target="_blank">llama.cpp</a>
     (MIT, (c) The ggml authors). Not affiliated with llama.cpp / ggml-org.
   </div>
-</div>
+</main>
 <div id="toast"></div>
 <div id="modal-root"></div>
 <div id="wizard" class="wizard-overlay" hidden>
