@@ -84,7 +84,7 @@ function initSidebar(){
   // rail settings cycle (reuse existing setters)
   const rm=$("#rail-mode"); if(rm) rm.onclick=()=>setMode(document.body.classList.contains("mode-lite")?"advanced":"lite");
   const rt=$("#rail-theme"); if(rt) rt.onclick=()=>setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark");
-  const rc=$("#rail-cvd"); if(rc) rc.onclick=()=>setCvd(document.documentElement.dataset.cvd!=="safe");
+  const rc=$("#rail-cvd"); if(rc) rc.onclick=()=>{ const nx=document.documentElement.dataset.cvd!=="safe"; setCvd(nx); rc.classList.toggle("on", nx); };
   // reflect cvd "on" state on the rail icon
   const refl=()=>{ const on=document.documentElement.dataset.cvd==="safe"; if(rc) rc.classList.toggle("on", on); };
   refl();
