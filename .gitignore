@@ -15,3 +15,7 @@ CLAUDE.md
 
 # agent design/plan artifacts (superpowers) - keep internal, don't publish
 docs/superpowers/
+
+# docs site build output + local-only working docs
+site/
+docs/content/_*.md

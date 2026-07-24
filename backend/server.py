@@ -7,7 +7,7 @@ detection, and drive scanning. Pure Python stdlib.
 import json, os, subprocess, urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup, wiki
+import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats, autotune, anthropic_shim, agentsetup, wiki, docs
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag
 
@@ -634,6 +634,25 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"profiles": wiki.get_profiles()})
         if p == "/api/wiki/preview":
             return self._send(200, {"text": wiki.compose(qs.get("profile", [""])[0])})
+        if p == "/api/docs":
+            return self._send(200, docs.manifest())
+        if p == "/api/docs/page":
+            slug = qs.get("slug", [""])[0]
+            pg = docs.page(slug)
+            return self._send(200, pg) if pg else self._send(404, {"error": "no such page"})
+        if p.startswith("/docs/img/"):
+            try:
+                path = docs._safe_img(p[len("/docs/img/"):])
+            except ValueError:
+                return self._send(404, {"error": "bad image"})
+            if not os.path.exists(path):
+                return self._send(404, {"error": "not found"})
+            ext = os.path.splitext(path)[1].lower()
+            ctype = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                     ".gif": "image/gif", ".svg": "image/svg+xml",
+                     ".webp": "image/webp"}.get(ext, "application/octet-stream")
+            with open(path, "rb") as f:
+                return self._send(200, f.read(), ctype)
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
