@@ -266,6 +266,33 @@ body.mode-lite .advanced-only{display:none !important}
 .sicon.on{color:var(--amber);border-color:var(--amber)}
 .settings-rail{display:none;flex-direction:column;gap:8px;align-items:center}
 .sicon svg{width:18px;height:18px}
+#nav-menu{display:none;margin-right:10px}
+.scrim{position:fixed;inset:0;background:var(--overlay);z-index:40}
+.scrim[hidden]{display:none}
+@media (max-width:900px){
+  :root{--nav-w:52px}                       /* force rail width */
+  :root #sidebar .brand-word,
+  :root #sidebar .navitem .label{display:none}
+  :root #sidebar{align-items:center}
+  :root #sidebar .side-settings .mode-toggle,
+  :root #sidebar .side-settings .cvd-toggle{display:none}
+  :root #sidebar .settings-rail{display:flex}
+  .navitem{justify-content:center;padding:9px 0;gap:0}
+  #nav-toggle{display:none}                  /* no manual expand below 900 */
+}
+@media (max-width:600px){
+  body.app{grid-template-columns:1fr}        /* content full-width; sidebar overlays */
+  #sidebar{position:fixed;left:0;top:0;height:100vh;width:220px;z-index:41;transform:translateX(-100%);
+    transition:transform .16s ease;align-items:stretch}
+  body.drawer-open #sidebar{transform:none}
+  body.drawer-open #sidebar .brand-word,
+  body.drawer-open #sidebar .navitem .label{display:inline}   /* drawer shows full labels */
+  body.drawer-open #sidebar .navitem{justify-content:flex-start;padding:9px 10px;gap:12px}
+  body.drawer-open #sidebar .side-settings .mode-toggle,
+  body.drawer-open #sidebar .side-settings .cvd-toggle{display:flex}
+  body.drawer-open #sidebar .settings-rail{display:none}
+  #nav-menu{display:inline-flex}
+}
 </style>
 </head>
 <body class="app">
@@ -305,6 +332,7 @@ body.mode-lite .advanced-only{display:none !important}
 </nav>
 <main id="content">
   <div class="topbar">
+    <button id="nav-menu" class="nav-toggle" title="Menu" aria-label="Open menu">&#9776;</button>
     <span id="page-title">Models</span>
     <span class="sub" id="clock"></span>
   </div>
@@ -361,6 +389,7 @@ body.mode-lite .advanced-only{display:none !important}
     </div>
   </div>
 </div>
+<div id="scrim" class="scrim" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>

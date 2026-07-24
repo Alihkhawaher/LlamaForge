@@ -92,6 +92,15 @@ function initSidebar(){
   showNavHint();
 }
 
+/* ---------- responsive drawer (<=600px) ---------- */
+function openDrawer(){ document.body.classList.add("drawer-open"); const s=$("#scrim"); if(s) s.hidden=false; }
+function closeDrawer(){ document.body.classList.remove("drawer-open"); const s=$("#scrim"); if(s) s.hidden=true; }
+function initDrawer(){
+  const m=$("#nav-menu"); if(m) m.onclick=openDrawer;
+  const s=$("#scrim"); if(s) s.onclick=closeDrawer;
+  document.querySelectorAll(".navitem").forEach(n=>n.addEventListener("click", ()=>{ if(document.body.classList.contains("drawer-open")) closeDrawer(); }));
+}
+
 /* ---------- first-run wizard ---------- */
 const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
   steps:["engine","hardware","model","tune","load"]};
@@ -1374,6 +1383,7 @@ setInterval(clock,1000);clock();
 initModeToggle();
 initThemeControls();
 initSidebar();
+initDrawer();
 initWizard();
 updatePageTitle();
 /* deep-linkable tabs: #<tab> in the URL activates that tab (docs deep-links + tools/shoot.py).
