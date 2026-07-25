@@ -1,0 +1,103 @@
+// Build tab: current llama.cpp commit vs upstream, CMake flags, rebuild, log.
+// Also surfaces the vLLM pip package version, since updating it is a build-ish
+// concern rather than a setup one.
+import { $, esc, setHTML, api, toast, agoText, fmtDur } from "./core.js";
+
+let buildPoll = null;
+
+export async function loadBuild(force) {
+  const v = $("#view-build");
+  if (force) {
+    const s = $("#upstream-status");
+    if (s) { s.textContent = "checking github..."; s.className = "v work"; }
+  } else setHTML(v, `<div class="skel">QUERYING GIT + GITHUB...</div>`);
+  const q = force ? "?force=1" : "";
+  const b = await api("/api/build/info" + q);
+  const vver = await api("/api/vllm/version" + q);
+  const cur = b.current||{}, up = b.updates||{};
+  const flags = b.saved_flags && Object.keys(b.saved_flags).length ? b.saved_flags : b.recommended_flags||{};
+  const behind = up.ok ? up.behind : 0;
+  const checked = up.cached ? `checked ${agoText(up.checked_secs_ago)}` : "checked just now";
+  setHTML(v, `
+    <div class="card"><h3>Current Build</h3>
+      <div class="kv"><span class="k">commit</span><span class="v">${esc(cur.hash||"?")} &middot; ${esc((cur.subject||"").slice(0,60))}</span></div>
+      <div class="kv"><span class="k">branch</span><span class="v">${esc(cur.branch||"?")}</span></div>
+      <div class="kv"><span class="k">date</span><span class="v">${esc(cur.date||"?")}</span></div>
+    </div>
+    <div class="card"><h3>Upstream (github.com/ggml-org/llama.cpp)</h3>
+      <div class="kv"><span class="k">status</span><span class="v ${behind>0?'bad':'ok'}" id="upstream-status">${up.ok?(behind>0?behind+" commits behind":"up to date"):"check failed"}</span></div>
+      ${up.latest?`<div class="kv"><span class="k">latest</span><span class="v">${esc(up.latest.hash)} &middot; ${esc((up.latest.subject||"").slice(0,60))}</span></div>`:""}
+      <div class="actions" style="margin-top:6px">
+        <button class="ghost" id="btn-refresh-upstream">Check GitHub now</button>
+        <span class="note" style="margin:0">${esc(checked)} &middot; auto-checks at most every 15 min</span>
+      </div>
+    </div>
+    <div class="card"><h3>Build Flags (auto-detected for this machine)</h3>
+      <div class="flags">${Object.entries(flags).map(([k,val])=>`<span class="flagpill">${esc(k)}=${esc(val)}</span>`).join("")}</div>
+      <div class="actions">
+        <button class="primary" id="btn-build">${behind>0?"Pull latest &amp; Rebuild":"Rebuild current"}</button>
+        <label style="font-size:11px;color:var(--dim)"><input type="checkbox" id="opt-pull" ${behind>0?"checked":""}> git pull first</label>
+        <span class="msg" id="build-msg"></span>
+      </div>
+      <div class="note">Rebuilds llama.cpp with CMake. Prior binaries are backed up first. Takes several minutes; watch the log below.</div>
+    </div>
+    <div class="card"><h3>Build Log</h3><div class="log" id="build-log">idle</div></div>`
+    + (vver.error ? "" : `<div class="card"><h3>vLLM (pip package in WSL)</h3>
+      <div class="kv"><span class="k">installed</span><span class="v ${vver.installed&&vver.installed.present?'ok':'bad'}">${vver.installed&&vver.installed.present?"v"+esc(vver.installed.version):"not installed (see Setup)"}</span></div>
+      <div class="kv"><span class="k">latest on PyPI</span><span class="v">${esc(vver.latest||"?")}</span></div>
+      ${vver.installed&&vver.installed.present&&vver.latest&&vver.latest!==vver.installed.version?`<div class="actions"><button class="primary" id="btn-vllm-update">Update vLLM to ${esc(vver.latest)}</button><span class="msg" id="vllm-upd-msg"></span></div>`:`<div class="note">${vver.installed&&vver.installed.present?"vLLM is up to date.":"Install vLLM from the Setup tab first."}</div>`}
+      <div class="log" id="vllm-update-log" style="display:none">idle</div>
+    </div>`));
+  $("#btn-build").onclick = startBuild;
+  const refBtn = $("#btn-refresh-upstream");
+  if (refBtn) refBtn.onclick = () => { refBtn.disabled = true; loadBuild(true); };
+  pollBuild();
+  const updBtn = $("#btn-vllm-update");
+  if (updBtn) updBtn.onclick = async () => {
+    const msg = $("#vllm-upd-msg"); msg.className = "msg work"; msg.textContent = "starting update...";
+    const r = await api("/api/vllm/update");
+    if (r.started) {
+      toast("vLLM update started", "ok");
+      $("#vllm-update-log").style.display = "";
+      const iv = setInterval(async () => {
+        const s = await api("/api/vllm/setup");
+        const l = $("#vllm-update-log");
+        if (l) { l.textContent = s.setup_log||""; l.scrollTop = l.scrollHeight; }
+        if (s.setup_job && !s.setup_job.running) {
+          clearInterval(iv); msg.className = "msg ok"; msg.textContent = "done";
+          setTimeout(loadBuild, 1200);
+        }
+      }, 2000);
+    } else msg.textContent = "a job is already running";
+  };
+}
+
+async function startBuild() {
+  const pull = $("#opt-pull").checked, msg = $("#build-msg");
+  msg.className = "msg work"; msg.textContent = "starting build...";
+  const r = await api("/api/build/start", {pull});
+  if (r.started) toast("Build started", "ok");
+  else msg.textContent = "a build is already running";
+  pollBuild();
+}
+
+async function pollBuild() {
+  clearInterval(buildPoll);
+  const tick = async () => {
+    const s = await api("/api/build/log");
+    const log = $("#build-log");
+    if (log) { log.textContent = s.log||"idle"; log.scrollTop = log.scrollHeight; }
+    const msg = $("#build-msg");
+    if (msg && s.running) { msg.className = "msg work"; msg.textContent = "building: " + s.phase; }
+    else if (msg && s.phase === "done") {
+      msg.className = "msg ok";
+      msg.textContent = "build OK" + (s.started&&s.finished?` in ${fmtDur(s.finished-s.started)}`:"");
+      clearInterval(buildPoll);
+    } else if (msg && s.phase === "failed") {
+      msg.className = "msg err"; msg.textContent = "build failed - see log";
+      clearInterval(buildPoll);
+    }
+  };
+  await tick();
+  buildPoll = setInterval(tick, 2000);
+}

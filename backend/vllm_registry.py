@@ -9,10 +9,16 @@ which treats every section as a GGUF preset. Shape:
 Model id defaults to the HF repo id (org/name), which is also the name vLLM
 reports on its OpenAI API. Pure stdlib.
 """
-import json, os
+import json, os, threading
+
+import atomicio
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_PATH = os.path.join(ROOT, "vllm_models.json")
+
+# Same reasoning as config.py: upsert/set_settings/remove are load->mutate->save
+# and run on request threads. RLock so the public functions can nest.
+_LOCK = threading.RLock()
 
 
 def _path(path):
@@ -33,43 +39,47 @@ def load(path=None):
 
 
 def save(data, path=None):
-    with open(_path(path), "w", encoding="utf-8", newline="") as f:
-        json.dump(data, f, indent=2)
+    """Atomic write - a truncated registry loses every downloaded vLLM model."""
+    with _LOCK:
+        atomicio.write_json(_path(path), data)
     return data
 
 
 def upsert(model_id, fields, path=None):
     """Create or update a model's metadata (repo/wsl_path/size_bytes/quant).
     Preserves any existing settings; ensures a settings dict exists."""
-    data = load(path)
-    entry = data.get(model_id, {})
-    entry.update(fields)
-    entry.setdefault("settings", {})
-    data[model_id] = entry
-    return save(data, path)
+    with _LOCK:
+        data = load(path)
+        entry = data.get(model_id, {})
+        entry.update(fields)
+        entry.setdefault("settings", {})
+        data[model_id] = entry
+        return save(data, path)
 
 
 def set_settings(model_id, updates, path=None):
     """Merge knob updates into a model's settings (or the global '*').
     A blank/None value removes the key."""
-    data = load(path)
-    if model_id == "*":
-        target = data["*"]
-    else:
-        target = data.setdefault(model_id, {"repo": model_id}).setdefault("settings", {})
-    for k, v in updates.items():
-        v = ("" if v is None else str(v)).strip()
-        if v == "":
-            target.pop(k, None)
+    with _LOCK:
+        data = load(path)
+        if model_id == "*":
+            target = data["*"]
         else:
-            target[k] = v
-    return save(data, path)
+            target = data.setdefault(model_id, {"repo": model_id}).setdefault("settings", {})
+        for k, v in updates.items():
+            v = ("" if v is None else str(v)).strip()
+            if v == "":
+                target.pop(k, None)
+            else:
+                target[k] = v
+        return save(data, path)
 
 
 def remove(model_id, path=None):
-    data = load(path)
-    data.pop(model_id, None)
-    return save(data, path)
+    with _LOCK:
+        data = load(path)
+        data.pop(model_id, None)
+        return save(data, path)
 
 
 def effective_settings(model_id, path=None):

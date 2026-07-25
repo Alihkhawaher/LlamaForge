@@ -133,6 +133,34 @@ Only reachable when vLLM support is available on the host (`_vllm_gate`).
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/` or `/index.html` | The dashboard's single HTML page. |
-| GET | `/app.js` | The dashboard's client-side JavaScript. |
+| GET | `/web/js/<name>.js` | A frontend ES module. Confined to `web/`; anything outside 404s. |
+
+## Engine-agnostic model verbs
+
+These dispatch on the model's own backend, so the same call works for a
+llama.cpp GGUF and a vLLM safetensors repo. The body takes an optional
+`backend` hint (`"llamacpp"` / `"vllm"`); without it the id is looked up.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/models/load` | Load `{model}` on whichever engine owns it. |
+| POST | `/api/models/unload` | Unload `{model}`. |
+| POST | `/api/models/save` | Persist `{settings}` and apply them (restarting the process if that engine has no hot reload). |
+| POST | `/api/models/delete` | Delete the model's files, where the engine supports it (vLLM only; llama.cpp returns 400). |
+
+The engine-specific paths (`/api/load`, `/api/vllm/load`, …) remain as aliases.
+
+## Request requirements
+
+The dashboard binds `127.0.0.1`, which keeps it off your network but leaves it
+reachable by any page in your browser. Every request is therefore checked:
+
+- `Host` must name this loopback service, and `Origin` — when present — must
+  match it. Anything else gets **403**. This blocks both cross-site requests and
+  DNS rebinding.
+- `POST` bodies must be `application/json`. A form content type gets **415**,
+  which is what stops a cross-site `<form>` from forging a state change.
+- `POST /api/config` only accepts an allowlist of user-facing keys. See
+  [Security](https://github.com/dadwritestech/LlamaForge/blob/master/SECURITY.md).
 
 See also [config.json Reference](config.md) for the settings `/api/config` and `/api/network` write, and [models.ini Format](models-ini.md) for the file `/api/save`, `/api/scan/apply`, `/api/scan/prune`, and `/api/hub/add` mutate.

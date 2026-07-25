@@ -1,12 +1,12 @@
 import conftest_paths  # noqa: F401
 import unittest
-import server
+import routes
 
 
 class TestMergeVllm(unittest.TestCase):
     def test_llamacpp_rows_get_backend_and_endpoint(self):
         base = {"models": [{"id": "gguf-a", "status": "loaded"}], "global": {}}
-        out = server.merge_vllm_models(base, vllm_status=[], vllm_ids=[],
+        out = routes.merge_vllm_models(base, vllm_status=[], vllm_ids=[],
                                        router_port=8080)
         self.assertEqual(out["models"][0]["backend"], "llamacpp")
         self.assertEqual(out["models"][0]["endpoint"], "http://127.0.0.1:8080")
@@ -15,7 +15,7 @@ class TestMergeVllm(unittest.TestCase):
         base = {"models": [], "global": {}}
         status = [{"model_id": "Qwen/Qwen3-8B", "state": "ready", "port": 8081,
                    "endpoint": "http://127.0.0.1:8081"}]
-        out = server.merge_vllm_models(base, vllm_status=status,
+        out = routes.merge_vllm_models(base, vllm_status=status,
                                        vllm_ids=["Qwen/Qwen3-8B"], router_port=8080)
         row = next(m for m in out["models"] if m["id"] == "Qwen/Qwen3-8B")
         self.assertEqual(row["backend"], "vllm")
@@ -24,7 +24,7 @@ class TestMergeVllm(unittest.TestCase):
 
     def test_registered_but_stopped_vllm_model_shows_offline(self):
         base = {"models": [], "global": {}}
-        out = server.merge_vllm_models(base, vllm_status=[],
+        out = routes.merge_vllm_models(base, vllm_status=[],
                                        vllm_ids=["Qwen/Qwen3-8B"], router_port=8080)
         row = next(m for m in out["models"] if m["id"] == "Qwen/Qwen3-8B")
         self.assertEqual(row["backend"], "vllm")

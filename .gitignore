@@ -2,6 +2,7 @@
 config.json
 models.ini
 stats.json
+wiki/
 logs/
 __pycache__/
 *.pyc

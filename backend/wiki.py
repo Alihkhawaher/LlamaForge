@@ -67,26 +67,28 @@ def save_profile(name, docs, description=""):
     name = (name or "").strip()
     if not name:
         raise ValueError("profile name is required")
-    c = config.load()
-    profs = c.get("wiki_profiles")
-    if not isinstance(profs, dict):
-        profs = {}
-    profs[name] = {"docs": [_safe_name(x) for x in (docs or [])],
-                   "description": description or ""}
-    c["wiki_profiles"] = profs
-    config.save(c)
-    return profs
+    entry = {"docs": [_safe_name(x) for x in (docs or [])],
+             "description": description or ""}   # validate before taking the lock
+
+    def _apply(c):
+        profs = c.get("wiki_profiles")
+        if not isinstance(profs, dict):
+            profs = {}
+        profs[name] = entry
+        c["wiki_profiles"] = profs
+        return profs
+    return config.mutate(_apply)
 
 
 def delete_profile(name):
-    c = config.load()
-    profs = c.get("wiki_profiles")
-    if isinstance(profs, dict) and name in profs:
-        del profs[name]
-        c["wiki_profiles"] = profs
-        config.save(c)
-        return True
-    return False
+    def _apply(c):
+        profs = c.get("wiki_profiles")
+        if isinstance(profs, dict) and name in profs:
+            del profs[name]
+            c["wiki_profiles"] = profs
+            return True
+        return False
+    return config.mutate(_apply)
 
 
 def compose(profile_name):
@@ -110,16 +112,16 @@ def active_profile(model_id):
 
 
 def set_active(model_id, profile):
-    c = config.load()
-    a = c.get("wiki_active")
-    if not isinstance(a, dict):
-        a = {}
-    if profile:
-        a[model_id] = profile
-    elif model_id in a:
-        del a[model_id]
-    c["wiki_active"] = a
-    config.save(c)
+    def _apply(c):
+        a = c.get("wiki_active")
+        if not isinstance(a, dict):
+            a = {}
+        if profile:
+            a[model_id] = profile
+        elif model_id in a:
+            del a[model_id]
+        c["wiki_active"] = a
+    config.mutate(_apply)
 
 
 # ---------------- delivery A: agent-file export ----------------

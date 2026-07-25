@@ -3,12 +3,23 @@
 All machine-specific paths live in config.json so the project is portable:
 nothing is hardcoded. On a fresh machine, bootstrap writes config.json.
 """
-import copy, json, os, re
+import copy, json, os, re, threading
 
-import gguf
+import atomicio, gguf
 
 ROOT      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG    = os.path.join(ROOT, "config.json")
+
+# The dashboard is a ThreadingHTTPServer with background workers (stats poller,
+# build/download threads), and config.json is edited by load->mutate->save at
+# many call sites. Without a lock those interleave and silently drop one side's
+# change. RLock (not Lock) because update() below calls load() and save() while
+# already holding it.
+_LOCK = threading.RLock()
+
+# Set when load() finds an unreadable config.json. The dashboard surfaces this
+# instead of silently running on - and saving over - a corrupt file.
+LOAD_ERROR = None
 
 DEFAULTS = {
     "llama_src":   "",                       # git checkout of llama.cpp
@@ -39,19 +50,67 @@ DEFAULTS = {
 }
 
 def load():
+    global LOAD_ERROR
     cfg = copy.deepcopy(DEFAULTS)   # deep so mutable defaults (presets, lists) never alias
-    if os.path.exists(CONFIG):
+    with _LOCK:
+        if not os.path.exists(CONFIG):
+            LOAD_ERROR = None
+            return cfg
         try:
             with open(CONFIG, encoding="utf-8-sig") as f:
                 cfg.update(json.load(f))
-        except Exception:
-            pass
-    return cfg
+            LOAD_ERROR = None
+        except Exception as e:
+            # An unreadable config.json used to look exactly like a fresh
+            # install, and the next save() wrote defaults over it - silent total
+            # loss of the user's settings. Quarantine the bytes before anything
+            # can overwrite them, and remember why so the UI can say so.
+            LOAD_ERROR = f"config.json could not be read ({e}); running on defaults"
+            _quarantine(CONFIG)
+        return cfg
+
+def _quarantine(path):
+    """Copy an unreadable file aside, write-once, so the original survives the
+    next save(). Best-effort: never let this break startup."""
+    bak = path + ".corrupt"
+    try:
+        if not os.path.exists(bak):
+            import shutil
+            shutil.copy2(path, bak)
+    except OSError:
+        pass
+    return bak
 
 def save(cfg):
-    with open(CONFIG, "w", encoding="utf-8", newline="") as f:
-        json.dump(cfg, f, indent=2)
+    """Write config.json atomically: a crash or power loss mid-write leaves the
+    previous file intact rather than a truncated one."""
+    with _LOCK:
+        atomicio.write_json(CONFIG, cfg)
     return cfg
+
+def update(changes):
+    """Atomic read-modify-write of config.json.
+
+    Every caller that used to do `c = load(); c[k] = v; save(c)` should use this
+    instead: those sequences interleave across request/worker threads and the
+    last writer silently wins. Returns the full saved config.
+    """
+    with _LOCK:
+        cfg = load()
+        cfg.update(changes or {})
+        return save(cfg)
+
+def mutate(fn):
+    """Atomic read-modify-write where the new value depends on the old one
+    (nested dicts like presets / wiki_profiles / wiki_active). `fn` receives the
+    loaded config and edits it in place; the result is saved under the lock.
+    Returns fn's return value, so callers can hand back the sub-dict they built.
+    """
+    with _LOCK:
+        cfg = load()
+        out = fn(cfg)
+        save(cfg)
+        return out
 
 def migrate():
     """One-time upgrade of an on-disk config.json for the Lite/Advanced feature.
@@ -62,24 +121,31 @@ def migrate():
     onboarded; a fresh checkout -> Lite + not onboarded (so the wizard shows).
     Idempotent: a config already carrying `ui_mode` is returned unchanged.
     """
-    if not os.path.exists(CONFIG):
-        return load()
-    cfg = load()
-    raw = {}
-    try:
-        with open(CONFIG, encoding="utf-8-sig") as f:
-            raw = json.load(f)
-    except Exception:
+    with _LOCK:
+        if not os.path.exists(CONFIG):
+            return load()
+        cfg = load()
         raw = {}
-    if "ui_mode" in raw:
+        try:
+            with open(CONFIG, encoding="utf-8-sig") as f:
+                raw = json.load(f)
+        except Exception:
+            raw = {}
+        if "ui_mode" in raw:
+            return cfg
+        existing = bool(cfg.get("server_bin"))
+        cfg["ui_mode"] = "advanced" if existing else "lite"
+        cfg["onboarded"] = existing
+        save(cfg)
         return cfg
-    existing = bool(cfg.get("server_bin"))
-    cfg["ui_mode"] = "advanced" if existing else "lite"
-    cfg["onboarded"] = existing
-    save(cfg)
-    return cfg
 
 # ---------------- models.ini (BOM-free, comment-preserving) ----------------
+
+# models.ini is edited the same read-modify-write way as config.json (set_keys,
+# remove_section, apply_ctx_defaults) from request threads and from autotune's
+# refine loop. Separate lock from _LOCK: the two files are independent, and
+# apply_ctx_defaults holds this one across many set_keys calls.
+_INI_LOCK = threading.RLock()
 
 def ini_path():
     return load()["models_ini"]
@@ -90,7 +156,7 @@ def read_sections(path=None):
     if not path or not os.path.exists(path):
         return {}
     out, cur = {}, None
-    with open(path, encoding="utf-8-sig") as f:
+    with _INI_LOCK, open(path, encoding="utf-8-sig") as f:
         for line in f:
             s = line.strip()
             m = re.match(r"^\[(.+?)\]", s)
@@ -110,6 +176,10 @@ def set_keys(section, updates, path=None):
     New keys are inserted right after the section's last existing key line
     (before any trailing blank/comment lines), so they stay visually grouped."""
     path = path or ini_path()
+    with _INI_LOCK:
+        return _set_keys_locked(section, updates, path)
+
+def _set_keys_locked(section, updates, path):
     lines = []
     if os.path.exists(path):
         with open(path, encoding="utf-8-sig") as f:
@@ -169,13 +239,18 @@ def set_keys(section, updates, path=None):
     _write(path, out + new_body + lines[end:])
 
 def _write(path, lines):
-    with open(path, "w", encoding="utf-8", newline="") as f:  # never write a BOM
-        f.write("\n".join(lines))
+    """Atomic, BOM-free rewrite. models.ini is the router's source of truth for
+    every model; a truncated one means the router loses them all."""
+    atomicio.write_text(path, "\n".join(lines))
 
 def remove_section(section, path=None):
     """Delete an entire [section] block (header + body up to the next section),
     preserving everything else in the file. Returns True if it was removed."""
     path = path or ini_path()
+    with _INI_LOCK:
+        return _remove_section_locked(section, path)
+
+def _remove_section_locked(section, path):
     if not path or not os.path.exists(path):
         return False
     with open(path, encoding="utf-8-sig") as f:
@@ -213,25 +288,27 @@ def save_preset(name, settings):
         raise ValueError("preset name is required")
     clean = {k: str(v).strip() for k, v in (settings or {}).items()
              if str(v).strip() != ""}
-    cfg = load()
-    presets = cfg.get("presets")
-    if not isinstance(presets, dict):
-        presets = {}
-    presets[name] = clean
-    cfg["presets"] = presets
-    save(cfg)
-    return presets
+    with _LOCK:
+        cfg = load()
+        presets = cfg.get("presets")
+        if not isinstance(presets, dict):
+            presets = {}
+        presets[name] = clean
+        cfg["presets"] = presets
+        save(cfg)
+        return presets
 
 def delete_preset(name):
     """Remove a named preset. Returns True if it existed."""
-    cfg = load()
-    presets = cfg.get("presets")
-    if isinstance(presets, dict) and name in presets:
-        del presets[name]
-        cfg["presets"] = presets
-        save(cfg)
-        return True
-    return False
+    with _LOCK:
+        cfg = load()
+        presets = cfg.get("presets")
+        if isinstance(presets, dict) and name in presets:
+            del presets[name]
+            cfg["presets"] = presets
+            save(cfg)
+            return True
+        return False
 
 # ---------------- automatic ctx-size defaults ----------------
 
@@ -252,39 +329,44 @@ def apply_ctx_defaults(path=None):
     path = path or ini_path()
     if not path or not os.path.exists(path):
         return {"changed": []}
-    secs = read_sections(path)
-    changed = []
+    # Held across the whole scan+rewrite: the decision to drop or set each
+    # section's ctx-size is made from `secs`, so a concurrent set_keys between
+    # the read and the writes would be silently reverted.
+    with _INI_LOCK:
+        secs = read_sections(path)
+        changed = []
 
-    glob = secs.get("*", {})
-    if glob.get("ctx-size") != CTX_GLOBAL_DEFAULT:
-        set_keys("*", {"ctx-size": CTX_GLOBAL_DEFAULT}, path)
-        changed.append("*")
+        glob = secs.get("*", {})
+        if glob.get("ctx-size") != CTX_GLOBAL_DEFAULT:
+            _set_keys_locked("*", {"ctx-size": CTX_GLOBAL_DEFAULT}, path)
+            changed.append("*")
 
-    for sec, kv in secs.items():
-        if sec == "*":
-            continue
-        mpath = kv.get("model")
-        if not mpath:
-            continue
-        d = gguf.default_ctx(mpath)
-        if d is None:                       # unknown trained length -> leave as-is
-            continue
-        cur = kv.get("ctx-size")
-        if d == 0:                          # supports the global default
-            if cur is not None:
-                set_keys(sec, {"ctx-size": None}, path)
+        for sec, kv in secs.items():
+            if sec == "*":
+                continue
+            mpath = kv.get("model")
+            if not mpath:
+                continue
+            d = gguf.default_ctx(mpath)
+            if d is None:                   # unknown trained length -> leave as-is
+                continue
+            cur = kv.get("ctx-size")
+            if d == 0:                      # supports the global default
+                if cur is not None:
+                    _set_keys_locked(sec, {"ctx-size": None}, path)
+                    changed.append(sec)
+            elif cur != str(d):             # needs an explicit smaller override
+                _set_keys_locked(sec, {"ctx-size": str(d)}, path)
                 changed.append(sec)
-        elif cur != str(d):                 # needs an explicit smaller override
-            set_keys(sec, {"ctx-size": str(d)}, path)
-            changed.append(sec)
-    return {"changed": changed}
+        return {"changed": changed}
 
 def ensure_global(defaults, path=None):
     """Make sure a [*] global section exists with sane defaults (first run)."""
     path = path or ini_path()
-    secs = read_sections(path)
-    if "*" not in secs:
-        if not os.path.exists(path):
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                f.write("version = 1\n")
-        set_keys("*", defaults, path)
+    with _INI_LOCK:
+        secs = read_sections(path)
+        if "*" not in secs:
+            if not os.path.exists(path):
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    f.write("version = 1\n")
+            _set_keys_locked("*", defaults, path)

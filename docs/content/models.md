@@ -41,7 +41,7 @@ Because the flag count is entirely a function of your `llama-server` build, Llam
 | Reserved flags | `backend/argspec.py` `RESERVED` | Router-owned flags (`host`, `port`, `model`, `hf-repo`, etc.) are excluded from the per-model editor. |
 | Hot reload | `POST /api/save` (`backend/server.py`) | Writes knobs via `config.set_keys()`, unloads the model if running, then calls the router's `/models?reload=1` so `models.ini` is re-read live. |
 | Presets | `POST /api/presets/save` / `/apply` / `/delete` | Named knob sets stored in `config.json`'s `presets` key; applying one follows the same save + reload path as a manual edit. |
-| Compare | Models tab, Compare toggle (`web/app.js` `openCompare()`) | Client-side diff of `settings` across two or more selected models; no separate endpoint. |
+| Compare | Models tab, Compare toggle (`web/js/models.js` `openCompare()`) | Client-side diff of `settings` across two or more selected models; no separate endpoint. |
 | UI density | `ui_mode` in `config.json` (`"lite"` / `"advanced"`) | Lite = curated knob subset; advanced = the full parsed schema. |
 
 ## Troubleshooting

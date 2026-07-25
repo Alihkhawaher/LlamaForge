@@ -95,7 +95,8 @@ def parse_help(text):
 
 def build_schema(distro, venv):
     """Run `vllm serve --help` inside WSL and return grouped editable knobs."""
-    code, out, err = wsl.run(f"{venv}/bin/vllm serve --help", distro=distro, timeout=40)
+    code, out, err = wsl.run(f"{wsl.sh_path(venv)}/bin/vllm serve --help",
+                             distro=distro, timeout=40)
     if code != 0 or not out.strip():
         return {"error": (err or "vllm --help failed").strip()[:300], "groups": [], "count": 0}
     items = [i for i in parse_help(out) if not i["reserved"]]

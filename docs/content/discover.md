@@ -46,7 +46,7 @@ Each result also carries platform tags (Windows/Linux/macOS) — GGUF runs on al
 | Download engine | `backend/hub.py` `DownloadManager` | Background thread; one job at a time; progress polled via `/api/hub/progress`. |
 | Pause / resume | `DownloadManager.pause()` / `resume()` | Pause keeps the `.part` file; resume continues via an HTTP `Range` request from the bytes already on disk. |
 | Cancel | `DownloadManager.cancel()` | Stops the job and deletes the partial `.part` file. |
-| Platform tags | `hub.py` `PLATFORMS` / `web/app.js` `platTags()` | GGUF always tags `windows`/`linux`/`macos`; the tag matching the current machine is highlighted. |
+| Platform tags | `hub.py` `PLATFORMS` / `web/js/discover.js` `platTags()` | GGUF always tags `windows`/`linux`/`macos`; the tag matching the current machine is highlighted. |
 
 ## Troubleshooting
 
