@@ -6,7 +6,7 @@ order: 4
 
 # Keyboard Shortcuts
 
-LlamaForge's dashboard listens for a fixed set of keyboard shortcuts (`web/app.js`, the `keydown` handler). Shortcuts are ignored while focus is inside an input, select, or textarea (except `Escape`, which still clears the model search box), and none of them fire while a modifier key (`Ctrl`, `Alt`, `Cmd`) is held.
+LlamaForge's dashboard listens for a fixed set of keyboard shortcuts (`web/js/models.js`, the `keydown` handler). Shortcuts are ignored while focus is inside an input, select, or textarea (except `Escape`, which still clears the model search box), and none of them fire while a modifier key (`Ctrl`, `Alt`, `Cmd`) is held.
 
 ## Global
 

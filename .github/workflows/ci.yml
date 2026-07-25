@@ -37,5 +37,5 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Check app.js parses
-        run: node --check web/app.js
+      - name: Check every frontend module parses
+        run: for f in web/js/*.js; do node --check "$f" || exit 1; done

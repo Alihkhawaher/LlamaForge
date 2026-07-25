@@ -9,7 +9,7 @@ startup so restarting LlamaForge never loses or double-starts a model.
 
 Pure stdlib.
 """
-import os, time, threading, urllib.request
+import os, re, time, threading, urllib.request
 
 import wsl
 
@@ -19,24 +19,40 @@ HEALTH_INTERVAL = 3
 
 
 def settings_to_flags(settings):
-    """{knob: value} -> "--knob value ..." with store-true booleans handled.
-    'true' -> bare flag; 'false' -> omitted; everything else -> --k v."""
+    """{knob: value} -> ["--knob", "value", ...] with store-true booleans handled.
+    'true' -> bare flag; 'false' -> omitted; everything else -> --k v.
+
+    Returns a *list*, not a shell string: these keys and values come straight
+    from the /api/vllm/save request body, and joining them into a command line
+    let a value like `1 --foo` (or worse, `1; rm -rf ~`) inject arguments and
+    shell syntax. As a list each element stays one argv slot."""
     parts = []
     for k, v in settings.items():
+        k = str(k).strip()
         v = str(v).strip()
+        if not k or not _KNOB_RE.match(k):
+            continue                    # ignore junk keys rather than pass them on
         if v.lower() == "true":
             parts.append(f"--{k}")
         elif v.lower() == "false" or v == "":
             continue
         else:
-            parts.append(f"--{k} {v}")
-    return " ".join(parts)
+            parts.extend([f"--{k}", v])
+    return parts
 
 
-def build_serve_cmd(venv, model_ref, port, flag_str):
-    """The bash command run inside WSL to serve one model."""
-    base = f"{venv}/bin/vllm serve {model_ref} --host 0.0.0.0 --port {port}"
-    return f"{base} {flag_str}".strip()
+# vLLM long options: letters/digits/dash/underscore/dot only.
+_KNOB_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def build_serve_script(venv):
+    """The bash script run inside WSL to serve one model.
+
+    Only the venv (config-supplied) is embedded; the model ref, port and every
+    knob arrive as positional parameters, so none of them can be parsed as
+    shell syntax. "${@:3}" forwards the flag list verbatim."""
+    return (f'exec {wsl.sh_path(venv)}/bin/vllm serve "$1" '
+            f'--host 0.0.0.0 --port "$2" "${{@:3}}"')
 
 
 class Manager:
@@ -49,17 +65,19 @@ class Manager:
         self.lock = threading.Lock()
 
     # ---------- lifecycle ----------
-    def start(self, model_id, model_ref, flag_str):
+    def start(self, model_id, model_ref, flags):
+        """`flags` is the list from settings_to_flags()."""
         with self.lock:
             if len(self.instances) >= MAX_INSTANCES:
                 return False, "a vLLM model is already running (stop it first)"
-            cmd = build_serve_cmd(self.venv, model_ref, self.port, flag_str)
             os.makedirs(self.logdir, exist_ok=True)
             out = open(os.path.join(self.logdir, "vllm.out.log"), "a",
                        encoding="utf-8", errors="replace")
             err = open(os.path.join(self.logdir, "vllm.err.log"), "a",
                        encoding="utf-8", errors="replace")
-            wsl.popen(cmd, stdout=out, stderr=err, distro=self.distro)
+            wsl.popen(build_serve_script(self.venv),
+                      model_ref, self.port, *(flags or []),
+                      stdout=out, stderr=err, distro=self.distro)
             self.instances.append({"model_id": model_id, "port": self.port,
                                    "state": "starting", "started_at": time.time()})
         threading.Thread(target=self._await_ready, args=(model_id,), daemon=True).start()

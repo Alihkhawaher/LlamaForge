@@ -10,7 +10,7 @@ persists per-model + daily totals to stats.json. Pure stdlib.
 import json, os, re, threading, time, urllib.request, urllib.parse
 from datetime import date
 
-import config
+import atomicio, config
 
 ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATS_FILE = os.path.join(ROOT, "stats.json")
@@ -94,10 +94,7 @@ class StatsTracker:
         if not force and (not self._dirty or now - self._last_flush < FLUSH_SECS):
             return
         try:
-            tmp = STATS_FILE + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self.data, f)
-            os.replace(tmp, STATS_FILE)   # atomic on the same volume
+            atomicio.write_json(STATS_FILE, self.data, indent=None)
             self._dirty = False
             self._last_flush = now
         except Exception:

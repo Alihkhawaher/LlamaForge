@@ -334,11 +334,11 @@ body.mode-lite .advanced-only{display:none !important}
     <div class="gpus" id="gpus"></div>
     <div class="tbl-head"><h2>Model Registry</h2><div class="count" id="count">--</div></div>
     <div class="toolbar">
-      <input class="search" id="model-search" placeholder="filter models (e.g. qwen, vision, coder)..." oninput="filterModels(this)">
-      <span class="chip" id="fav-chip" onclick="toggleFavOnly(this)">&starf; Favorites only</span>
-      <span class="chip" id="cmp-chip" onclick="toggleCompare(this)" title="pick 2-3 models to compare their settings">Compare</span>
-      <span class="chip" id="cmp-run" style="display:none" onclick="openCompare()">Compare (<span id="cmp-n">0</span>)</span>
-      <span class="chip" id="unload-all" onclick="unloadAll()" title="unload every loaded model">Unload all</span>
+      <input class="search" id="model-search" placeholder="filter models (e.g. qwen, vision, coder)...">
+      <span class="chip" id="fav-chip">&starf; Favorites only</span>
+      <span class="chip" id="cmp-chip" title="pick 2-3 models to compare their settings">Compare</span>
+      <span class="chip" id="cmp-run" style="display:none">Compare (<span id="cmp-n">0</span>)</span>
+      <span class="chip" id="unload-all" title="unload every loaded model">Unload all</span>
     </div>
     <div class="list" id="list"><div class="skel">SCANNING REGISTRY...</div></div>
     <details class="kgroup" style="margin-top:16px" id="router-log-details">
@@ -382,6 +382,6 @@ body.mode-lite .advanced-only{display:none !important}
   </div>
 </div>
 <div id="scrim" class="scrim" hidden></div>
-<script src="app.js"></script>
+<script type="module" src="/web/js/main.js"></script>
 </body>
 </html>

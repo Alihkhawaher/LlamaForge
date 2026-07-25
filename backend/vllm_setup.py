@@ -40,7 +40,8 @@ def _gpu(distro):
 
 
 def _vllm_version(distro):
-    code, out, _err = wsl.run(f"{VENV}/bin/vllm --version 2>/dev/null", distro=distro, timeout=20)
+    code, out, _err = wsl.run(f"{wsl.sh_path(VENV)}/bin/vllm --version 2>/dev/null",
+                              distro=distro, timeout=20)
     if code == 0:
         m = re.search(r"(\d+\.\d+\.\d+)", out)
         return {"present": True, "version": m.group(1) if m else out.strip()}

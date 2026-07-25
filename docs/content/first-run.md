@@ -10,7 +10,7 @@ The first time LlamaForge starts with a fresh `config.json` (no `ui_mode` key on
 
 ## Lite vs Advanced mode
 
-LlamaForge has two UI densities, toggled at any time from the mode switch in the dashboard header (`applyMode()` in `web/app.js` toggles a `mode-lite` class on `<body>` and persists the choice via `PUT /api/config` with `ui_mode`):
+LlamaForge has two UI densities, toggled at any time from the mode switch in the dashboard header (`applyMode()` in `web/js/ui.js` toggles a `mode-lite` class on `<body>` and persists the choice via `PUT /api/config` with `ui_mode`):
 
 - **Lite** — a reduced set of controls, aimed at getting a model loaded quickly.
 - **Advanced** — the full set of ~220 llama.cpp knobs and every tab exposed.
@@ -19,7 +19,7 @@ Finishing the wizard sets `ui_mode` to `"lite"`; skipping it sets `ui_mode` to `
 
 ## The onboarding wizard
 
-`wizMaybeStart()` shows the wizard automatically whenever the server reports `onboarding.onboarded` as false. It walks five steps, defined in `WIZ.steps` in `web/app.js`:
+`wizMaybeStart()` shows the wizard automatically whenever the server reports `onboarding.onboarded` as false. It walks five steps, defined in `WIZ.steps` in `web/js/wizard.js`:
 
 1. **Engine** — "Do you already have a llama.cpp build?" Choose *Yes, I have one built* or *No — clone & build it for me*, and a build flavor (official llama.cpp; a mainline fork; ik_llama is listed but disabled, marked "coming soon"). The clone path hands off to the same flow as the Build tab.
 2. **Hardware** — a read-only summary of detected GPUs and their VRAM (or "No GPU detected — CPU mode" if none).
