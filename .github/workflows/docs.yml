@@ -5,6 +5,7 @@ on:
     paths: ['docs/content/**', 'backend/docs.py', 'tools/build_docs.py', '.github/workflows/docs.yml']
   pull_request:
     paths: ['docs/content/**', 'backend/docs.py', 'tools/build_docs.py', '.github/workflows/docs.yml']
+  workflow_dispatch: {}   # allow rebuilding Pages by hand from the Actions tab
 permissions:
   contents: read
   pages: write
@@ -22,10 +23,10 @@ jobs:
       - name: Build docs site
         run: python tools/build_docs.py
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         with: { path: site }
   deploy:
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:
