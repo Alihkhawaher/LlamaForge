@@ -51,10 +51,10 @@ Resolution order, most specific first:
 | Non-color status cues | `web/index.html` `:root[data-cvd="safe"] .msg.*::before` etc. | Adds `✓`/`✗`/`…` glyphs, a `LIVE` label, and a `!` glyph so status doesn't rely on hue alone. |
 | Apply theme | `web/js/ui.js` `applyTheme(t)` | Sets `data-theme`, syncs toggle button active state. |
 | Apply CVD | `web/js/ui.js` `applyCvd(on)` | Sets/removes `data-cvd="safe"`, syncs the checkbox. |
-| Persist theme | `web/app.js` `setTheme(t)` | `applyTheme` + `localStorage.setItem("theme", t)` + `POST /api/config`. |
-| Persist CVD | `web/app.js` `setCvd(on)` | `applyCvd` + `localStorage.setItem("cvd", ...)` + `POST /api/config`. |
+| Persist theme | `web/js/ui.js` `setTheme(t)` | `applyTheme` + `localStorage.setItem("theme", t)` + `POST /api/config`. |
+| Persist CVD | `web/js/ui.js` `setCvd(on)` | `applyCvd` + `localStorage.setItem("cvd", ...)` + `POST /api/config`. |
 | No-flash resolver | `web/index.html` inline `<head>` script | Runs before paint: `localStorage` theme/cvd, else OS `prefers-color-scheme`. |
-| Config fallback | `web/app.js` `refresh()` | Applies server `cfg.theme`/`cfg.cvd` only when this browser's `localStorage` has no entry yet. |
+| Config fallback | `web/js/main.js` boot | Applies server `cfg.theme`/`cfg.cvd` only when this browser's `localStorage` has no entry yet. |
 
 ## Troubleshooting
 

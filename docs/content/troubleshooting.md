@@ -8,7 +8,7 @@ order: 1
 
 ## Inline load-failure diagnosis
 
-When a model fails to load, the Models tab doesn't just show you a blank error — it calls `GET /api/model/diag?model=<id>`, which runs the router's last 120 log lines through `backend/diag.py`'s `diagnose()` function and renders the result inline (`.faildiag` block in `web/app.js`) instead of making you scroll the Router Log panel.
+When a model fails to load, the Models tab doesn't just show you a blank error — it calls `GET /api/model/diag?model=<id>`, which runs the router's last 120 log lines through `backend/diag.py`'s `diagnose()` function and renders the result inline (`.faildiag` block in `web/js/models.js`) instead of making you scroll the Router Log panel.
 
 While the diagnosis is loading, the row shows *"reading the router log..."*. If the log doesn't match a known failure pattern, it shows *"Load failed, but no specific cause was found in the router log - see the Router Log panel below."*
 
