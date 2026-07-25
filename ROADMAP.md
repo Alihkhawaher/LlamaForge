@@ -37,6 +37,31 @@ gets built next.
   diagnosis** with a suggested fix, copy-paste **client config** (curl / OpenAI /
   JSON), a keyboard map, **download pause/resume**, **auto-load a model on
   launch**, and an optional system-tray icon.
+- **Lite & Advanced modes + guided first run** — a first-run wizard (engine →
+  hardware → model → tune → load) and a hardware **auto-tune** that sizes
+  GPU-layer offload, KV-cache type, context ceiling, and intent presets
+  (balanced / speed / context / coding) to your VRAM. Lite hides the deep knobs;
+  Advanced exposes every flag.
+- **Anthropic-compatible endpoint** — a `POST /v1/messages` shim (SSE streaming +
+  tool use) that translates to the local OpenAI-style router, so Anthropic
+  clients (Claude Code and others) run against your local models.
+- **One-click agent setup** — a *Connect an Agent* panel that generates and
+  optionally writes config for **Claude Code**, **Codex**, and **pi.dev**
+  (Claude Code scoped to `127.0.0.1`; existing files backed up before any change).
+- **Context Wiki** — a directory of Markdown context docs composed into named
+  **profiles**, selected per model, and delivered by proxy injection (Anthropic
+  shim + OpenAI proxy) or exported into `CLAUDE.md` / `AGENTS.md` (marker region).
+  The stable prefix rides the router's prompt cache.
+- **Light/dark + colorblind-safe theming** — a Light theme adapting the terminal
+  identity, plus an orthogonal colorblind-safe mode (universal Okabe–Ito status
+  palette + non-color glyph/label cues). Layered persistence: localStorage >
+  `config.json` > OS.
+- **In-app documentation + published site** — a full docs corpus rendered from one
+  Markdown source into an in-app **Help** view and a static **GitHub Pages** site.
+- **Collapsible sidebar UI** — navigation moved from a top tab bar to a two-panel
+  layout: a left sidebar that collapses between an icon rail and labeled state
+  (settings pinned at the bottom), with a responsive overlay drawer on narrow
+  windows.
 
 ## Next (in progress)
 

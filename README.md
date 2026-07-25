@@ -48,13 +48,43 @@ LlamaForge trades that for direct, per-model control over the real llama.cpp ser
 
 ## Features
 
-| Tab | What it does |
+The dashboard is organized as a left **sidebar** (collapsible between a compact
+icon rail and a labeled view) with these sections. A **first-run wizard** and a
+**Lite / Advanced** mode toggle keep it approachable: Lite hides the deep knobs
+and a hardware **auto-tune** proposes per-model settings sized to your VRAM, while
+Advanced exposes every server flag.
+
+| View | What it does |
 |-----|--------------|
-| **Models** | Every model on your machine in one list with live GPU VRAM/util/temp meters (used **and** free). Expand a model to edit all **~220 llama.cpp knobs** (context, KV-cache type, speculative decoding, tensor split, sampling, rope, ...), grouped and searchable, with the file path, on-disk size, and a **GGUF metadata card** (architecture, parameters, quantization, trained context, layers, attention heads, rope). Save hot-reloads with no restart; **quick-load/unload right from the row header**, with load requests **queued** so a second load waits its turn. A failed load shows the **real error inline with a suggested fix** instead of making you scroll the log. Save any knob set as a **named preset** and apply it to any model in one click, **compare** 2–3 models side-by-side to see what differs, and copy a ready-to-paste **curl / OpenAI-client / JSON** snippet per model. A full **keyboard map** drives the tab, and the expanded row + unsaved edits persist across reloads. |
+| **Models** | Every model on your machine in one list with live GPU VRAM/util/temp meters (used **and** free). Expand a model to edit all **~220 llama.cpp knobs** (context, KV-cache type, speculative decoding, tensor split, sampling, rope, ...), grouped and searchable, with the file path, on-disk size, and a **GGUF metadata card** (architecture, parameters, quantization, trained context, layers, attention heads, rope). Save hot-reloads with no restart; **quick-load/unload right from the row header**, with load requests **queued** so a second load waits its turn. A failed load shows the **real error inline with a suggested fix** instead of making you scroll the log. Save any knob set as a **named preset** and apply it to any model in one click, **compare** 2–3 models side-by-side to see what differs, and copy a ready-to-paste **curl / OpenAI-client / JSON** snippet per model. A full **keyboard map** drives the view, and the expanded row + unsaved edits persist across reloads. |
 | **Stats** | Per-model usage tracked from the router's own metrics: tokens processed, average generation speed (tok/s), run counts, time loaded, and a stacked prompt/generated activity chart (14- or 30-day). Live throughput while a model runs. Resettable. (Totals are per-model across all clients — per-request/per-IP isn't shown because clients hit the router directly, so the dashboard never sees individual request origins.) |
 | **Discover** | Search **huggingface.co** for **GGUF** (llama.cpp) or **safetensors** (vLLM) models (newest / most downloaded / most liked). Every quant is rated against your total VRAM - **FITS / TIGHT / CPU OFFLOAD** - before you download, and each result is tagged with the platforms it runs on plus **GATED** and **INSTALLED** badges. One click streams the download (multi-shard + vision mmproj handled) with live speed/ETA, **pause/resume** (large downloads resume via HTTP range instead of restarting from zero) and cancel, then registers it in your registry. |
-| **Build / Update** | Shows your current llama.cpp commit, checks GitHub for how far behind you are (cached, so opening the tab doesn't re-hit GitHub every time — with a manual **Check GitHub now**), and rebuilds via CMake with flags **auto-detected for your CPU/GPU/Apple Silicon** (CUDA arch, AVX-512, quantized-KV flash attention, or Metal). Prior binaries are backed up; the build streams live and reports its duration. Also tracks the installed **vLLM** version against PyPI and updates it in place. |
+| **Build / Update** | Shows your current llama.cpp commit, checks GitHub for how far behind you are (cached, so opening the view doesn't re-hit GitHub every time — with a manual **Check GitHub now**), and rebuilds via CMake with flags **auto-detected for your CPU/GPU/Apple Silicon** (CUDA arch, AVX-512, quantized-KV flash attention, or Metal). Prior binaries are backed up; the build streams live and reports its duration. Also tracks the installed **vLLM** version against PyPI and updates it in place. |
 | **Setup** | Checks prerequisites (Git, CMake, Ninja, Python, C++ compiler, CUDA), installs missing ones **with your permission** (winget/choco on Windows, Homebrew on macOS; exact commands shown on Linux — the dashboard never runs `sudo`) or links official downloads. Detects hardware and scans your drives (or `$HOME` + mounts) for existing GGUF models. **Check for deleted models** prunes registry entries whose file has since been removed from disk. Installs the **vLLM** backend into WSL2 (Windows), and lets you pick a **favourite model to auto-load on launch**. |
+| **Context** | A **Context Wiki**: a working directory of Markdown context docs composed into named **profiles** and selected **per model**, then either **injected** into requests (through the Anthropic and OpenAI proxies) or **exported** into an agent's native context file (`CLAUDE.md` / `AGENTS.md`) inside a managed marker region. The injected prefix is stable, so the router's prompt cache reuses it across requests. |
+| **Help** | The full LlamaForge documentation, rendered **in-app** from the same Markdown source that builds the published docs site — searchable, with a per-page table of contents. |
+
+## Use it as an agent endpoint
+
+LlamaForge serves your local models to clients written for either major API, and
+wires popular coding agents up in one click:
+
+- **OpenAI-compatible** `/v1/chat/completions` (the llama.cpp router) and an
+  **Anthropic-compatible** `POST /v1/messages` **shim** on the panel — full SSE
+  streaming and tool use — so tools built for either API run against local models.
+- **One-click "Connect an Agent"** generates, and optionally writes, the config for
+  **Claude Code**, **Codex**, and **pi.dev** pointed at your endpoint (Claude Code
+  scoped to `127.0.0.1`; any file it touches is backed up first).
+- **Load/unload** endpoints let an agent swap models on demand, and the **Context
+  Wiki** can inject standing project knowledge into every request.
+
+## Themes & accessibility
+
+A **Light** theme sits alongside the original dark one (the amber terminal identity
+adapts rather than inverting), and an independent **Colorblind-safe** mode applies a
+universal Okabe–Ito status palette plus non-color cues (glyphs and labels) so status
+never depends on hue alone. The two are orthogonal — all four combinations are
+valid — and each choice persists per device (`localStorage` > `config.json` > OS).
 
 ## Two engines: llama.cpp + vLLM
 
@@ -96,7 +126,7 @@ Small things that add up when you use it every day:
 
 | Key | Action |
 |-----|--------|
-| `1`–`5` | switch tabs (Models / Stats / Discover / Build / Setup) |
+| `1`–`7` | switch views (Models / Stats / Discover / Build / Setup / Context / Help) |
 | `/` | focus the model filter (`Esc` clears it) |
 | `↑` / `↓` or `k` / `j` | move the row selection |
 | `Enter` | expand / collapse the selected row |
@@ -106,13 +136,13 @@ Small things that add up when you use it every day:
 
 ## Screenshots
 
-| Models — GGUF metadata, presets, per-model knobs, quick-load | Compare models side-by-side |
+| Models — sidebar nav, GGUF metadata, per-model knobs, quick-load | Discover with VRAM-fit ratings |
 |---|---|
-| ![Models tab](docs/screenshot-models.png) | ![Compare settings](docs/screenshot-compare.png) |
+| ![Models](docs/content/img/models.png) | ![Discover](docs/content/img/discover.png) |
 
-| Discover with VRAM-fit ratings | Setup & hardware detection |
+| In-app documentation (Help) | Build & update |
 |---|---|
-| ![Discover tab](docs/screenshot-discover.png) | ![Setup tab](docs/screenshot.png) |
+| ![In-app docs](docs/content/img/help.png) | ![Build](docs/content/img/build.png) |
 
 ## Quick start (new machine)
 
@@ -190,9 +220,14 @@ All machine-specific paths live in `config.json` (see `config.example.json`):
 | `presets` | named knob sets applied from the Models tab, e.g. `{"coding": {"temp": "0.2"}}` |
 | `wsl_distro` | WSL distro that runs vLLM (`""` = auto-pick the default) — Windows only |
 | `vllm_port` | port vLLM serves on inside WSL, forwarded to Windows localhost |
+| `ui_mode` | dashboard control density: `lite` or `advanced` (also toggled in the sidebar) |
+| `theme` / `cvd` | appearance: `theme` = `""` (follow OS) / `light` / `dark`, `cvd` = colorblind-safe on/off (also toggled in the sidebar) |
+| `anthropic_shim_enabled` / `anthropic_default_model` | serve the Anthropic-compatible `/v1/messages` endpoint, and the model it falls back to |
+| `wiki_dir` / `wiki_profiles` / `wiki_active` | Context Wiki: the docs directory, named profiles, and the active profile per model |
 
-Most of these are managed from the dashboard (Setup, Build, and the Models tab), so
-you rarely edit `config.json` by hand.
+Most of these are managed from the dashboard (Setup, Build, the Models view, and the
+sidebar controls), so you rarely edit `config.json` by hand. The full key list is in
+the in-app **Help** (config.json Reference).
 
 By default everything binds to `127.0.0.1` only. The Setup tab has a **Network
 Access** panel to opt into serving the llama.cpp API/chat UI to other devices on
@@ -220,11 +255,14 @@ by hand always win.
 
 ## Roadmap
 
-Linux/macOS support and a **vLLM** backend (via WSL2 on Windows) have landed as
-early previews, along with named **knob presets** (a step toward full launch
-profiles); ik-llama and engine+model launch profiles are next. See
-[ROADMAP.md](ROADMAP.md) for what's shipped, in progress, and planned — it's an
-early preview, so priorities follow feedback.
+Recent additions: **Lite / Advanced modes** with a guided first run and hardware
+**auto-tune**, an **Anthropic-compatible endpoint** with one-click **agent setup**
+(Claude Code / Codex / pi.dev), a **Context Wiki**, **light/dark + colorblind-safe**
+theming, in-app **documentation**, and a collapsible **sidebar** layout — on top of
+Linux/macOS support and the **vLLM** backend (via WSL2 on Windows). Named **knob
+presets** are a first step toward launch profiles; ik-llama and engine+model launch
+profiles are next. See [ROADMAP.md](ROADMAP.md) for what's shipped, in progress, and
+planned — it's an early preview, so priorities follow feedback.
 
 ## Credits & license
 
