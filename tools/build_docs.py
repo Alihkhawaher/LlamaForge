@@ -4,11 +4,22 @@
 Imports backend/docs.py so the site and the in-app Help tab share ONE renderer.
 Pure stdlib. Output defaults to site/. Run: python tools/build_docs.py
 """
-import html, os, shutil, sys
+import html, os, re, shutil, sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_ROOT, "backend"))
 import docs  # noqa: E402
+
+# The shared renderer emits sibling crosslinks as `slug.md` (the canonical
+# reference the in-app viewer resolves by slug). On the static site those must
+# point at the generated `slug.html`. Rewrite only relative .md hrefs, keeping
+# any #anchor - absolute links (http(s)/mailto), root-relative, and image
+# paths are left untouched.
+_MD_LINK = re.compile(r'href="(?!https?://|mailto:|/|#)([^":#]+)\.md(#[^"]*)?"')
+
+
+def _md_links_to_html(body):
+    return _MD_LINK.sub(lambda m: 'href="%s.html%s"' % (m.group(1), m.group(2) or ""), body)
 
 _TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -56,7 +67,8 @@ def build(out_dir, content=None):
     written = []
     for p in pages:
         pg = docs.page(p["slug"])
-        htmlpage = _TEMPLATE.format(title=html.escape(pg["title"]), nav=_nav(pages, p["slug"]), body=pg["html"])
+        body = _md_links_to_html(pg["html"])
+        htmlpage = _TEMPLATE.format(title=html.escape(pg["title"]), nav=_nav(pages, p["slug"]), body=body)
         dest = os.path.join(out_dir, p["slug"] + ".html")
         with open(dest, "w", encoding="utf-8") as f:
             f.write(htmlpage)

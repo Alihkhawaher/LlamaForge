@@ -15,6 +15,18 @@ export async function loadDocs() {
   $$("a[data-slug]", nav).forEach(a =>
     a.onclick = e => { e.preventDefault(); openDoc(a.dataset.slug); });
   $("#docs-search").oninput = e => filterDocs(e.target.value.toLowerCase());
+  // The rendered body carries sibling crosslinks as `slug.md` (the canonical
+  // reference the static site rewrites to .html). Here we resolve them by slug
+  // instead of letting the browser navigate to a nonexistent .md URL. Delegated
+  // on the container, which persists across openDoc()'s innerHTML swaps.
+  $("#docs-body").addEventListener("click", e => {
+    const a = e.target.closest("a[href]");
+    if (!a) return;
+    const m = /^([^/:#][^:#]*)\.md(#.*)?$/.exec(a.getAttribute("href"));
+    if (!m) return;                            // external / anchor / non-.md: leave it
+    e.preventDefault();
+    openDoc(m[1].replace(/^.*\//, ""));        // slug = filename, minus any dir + .md
+  });
   if (DOCS.sections[0] && DOCS.sections[0].pages[0]) openDoc(DOCS.sections[0].pages[0].slug);
 }
 
