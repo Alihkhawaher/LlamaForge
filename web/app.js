@@ -62,6 +62,46 @@ function initThemeControls(){
   applyCvd(document.documentElement.dataset.cvd==="safe");
 }
 
+/* ---------- sidebar rail / expanded ---------- */
+function setNav(state){
+  const s = state==="expanded" ? "expanded" : "rail";
+  document.documentElement.dataset.nav = s;
+  try{ localStorage.setItem("nav", s); }catch(e){}
+  const b=$("#nav-toggle"); if(b) b.textContent = s==="rail" ? "›" : "‹";  // › / ‹
+}
+function toggleNav(){ setNav(document.documentElement.dataset.nav==="rail" ? "expanded" : "rail"); }
+function showNavHint(){
+  try{ if(localStorage.getItem("navHint")==="seen") return; }catch(e){}
+  if(document.documentElement.dataset.nav!=="rail") return;
+  if(window.innerWidth<=900) return;
+  const h=$("#nav-hint"); if(h){ h.hidden=false; setTimeout(dismissNavHint, 8000); }
+}
+function dismissNavHint(){
+  const h=$("#nav-hint"); if(h) h.hidden=true;
+  try{ localStorage.setItem("navHint","seen"); }catch(e){}
+}
+function initSidebar(){
+  const b=$("#nav-toggle"); if(b) b.onclick=()=>{ toggleNav(); dismissNavHint(); };
+  // rail settings cycle (reuse existing setters)
+  const rm=$("#rail-mode"); if(rm) rm.onclick=()=>setMode(document.body.classList.contains("mode-lite")?"advanced":"lite");
+  const rt=$("#rail-theme"); if(rt) rt.onclick=()=>setTheme(document.documentElement.dataset.theme==="dark"?"light":"dark");
+  const rc=$("#rail-cvd"); if(rc) rc.onclick=()=>{ const nx=document.documentElement.dataset.cvd!=="safe"; setCvd(nx); rc.classList.toggle("on", nx); };
+  // reflect cvd "on" state on the rail icon
+  const refl=()=>{ const on=document.documentElement.dataset.cvd==="safe"; if(rc) rc.classList.toggle("on", on); };
+  refl();
+  setNav(document.documentElement.dataset.nav||"rail");   // sync chevron glyph
+  showNavHint();
+}
+
+/* ---------- responsive drawer (<=600px) ---------- */
+function openDrawer(){ document.body.classList.add("drawer-open"); const s=$("#scrim"); if(s) s.hidden=false; }
+function closeDrawer(){ document.body.classList.remove("drawer-open"); const s=$("#scrim"); if(s) s.hidden=true; }
+function initDrawer(){
+  const m=$("#nav-menu"); if(m) m.onclick=openDrawer;
+  const s=$("#scrim"); if(s) s.onclick=closeDrawer;
+  document.querySelectorAll(".navitem").forEach(n=>n.addEventListener("click", ()=>{ if(document.body.classList.contains("drawer-open")) closeDrawer(); }));
+}
+
 /* ---------- first-run wizard ---------- */
 const WIZ = {step:0, engine:null, model:null, intent:"balanced", rec:null,
   steps:["engine","hardware","model","tune","load"]};
@@ -204,6 +244,10 @@ function initWizard(){
 }
 
 function switchTab(name){const t=$(`.tab[data-tab="${name}"]`);if(t)t.click();}
+function updatePageTitle(){
+  const a=document.querySelector(".navitem.active .label");
+  const t=$("#page-title"); if(a&&t) t.textContent=a.textContent;
+}
 $$(".tab").forEach(t=>t.onclick=()=>{
   $$(".tab").forEach(x=>x.classList.remove("active"));t.classList.add("active");
   $$(".view").forEach(v=>v.classList.remove("active"));$("#view-"+t.dataset.tab).classList.add("active");
@@ -213,6 +257,8 @@ $$(".tab").forEach(t=>t.onclick=()=>{
   if(t.dataset.tab==="stats")loadStats();
   if(t.dataset.tab==="context")loadContext();
   if(t.dataset.tab==="help")loadDocs();
+  updatePageTitle();
+  dismissNavHint();
 });
 
 /* ---------- in-app Help (docs) ---------- */
@@ -632,8 +678,6 @@ async function refresh(silent){
     }catch(e){}
     wizMaybeStart(s);
     renderOnboarding(s);
-    const plat=$("#platform");
-    if(plat&&s.platform)plat.textContent=" · "+s.platform;
     const vlog=$("#vllm-log-details");
     if(vlog&&s.vllm_supported===false)vlog.style.display="none";
     restoreEditorState(snap);
@@ -1337,7 +1381,10 @@ function clock(){$("#clock").textContent=new Date().toLocaleTimeString('en-GB')+
 setInterval(clock,1000);clock();
 initModeToggle();
 initThemeControls();
+initSidebar();
+initDrawer();
 initWizard();
+updatePageTitle();
 /* deep-linkable tabs: #<tab> in the URL activates that tab (docs deep-links + tools/shoot.py).
    Runs after the .tab onclick handlers are wired above. */
 window.addEventListener("hashchange",()=>{const h=location.hash.slice(1);if(h)switchTab(h);});
