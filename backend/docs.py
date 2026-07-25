@@ -150,8 +150,8 @@ def render(md):
 
 # ---------- content model ----------
 _FM = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.S)
-_SECTION_ORDER = {"getting-started": 0, "guides": 1, "reference": 2,
-                  "faq": 3, "troubleshooting": 4}
+_SECTION_ORDER = {"whats-new": 0, "getting-started": 1, "guides": 2,
+                  "reference": 3, "faq": 4, "troubleshooting": 5}
 _HEADING = re.compile(r"(?m)^(#{1,4})\s+(.*)$")
 
 
