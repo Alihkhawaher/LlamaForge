@@ -331,7 +331,13 @@ def _autotune_recommend(body):
     except OSError:
         size = None
     hw = {"gpus": hardware.detect_gpus(), "cpu": hardware.detect_cpu()}
-    rec = autotune.recommend(meta, hw, intent, size_bytes=size)
+    pred = None
+    try:
+        if cfg().get("vram_predict_enabled", True) and path:
+            pred = vram_predict.predict_local(path, size_bytes=size, cfg=cfg())
+    except Exception:
+        pred = None
+    rec = autotune.recommend(meta, hw, intent, size_bytes=size, prediction=pred)
     rec.update({"model": mid, "intent": intent})
     return rec
 
