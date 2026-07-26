@@ -47,3 +47,15 @@ The documentation you are reading is available inside the dashboard under the **
 Navigation moved from a top tab bar to a left **sidebar** that collapses between a compact icon rail and a labeled, expanded state. Settings are pinned at the bottom; the layout adapts to narrow windows with an overlay drawer. All existing navigation, theming, and keyboard shortcuts are unchanged.
 
 See [Keyboard Shortcuts](keymap.md).
+
+## Refine benchmark in the Models panel
+
+A **Refine** button now sits inline in each model's editor (beside the Presets bar). Pick an intent (balanced / speed / context / coding), click **Run**, and it auto-generates knob recommendations, benchmarks candidates with real completion requests (~200 tokens each), and applies the fastest config. A results table shows tok/s per candidate and which was chosen. The same autotune engine used in the first-run wizard is now available anytime from the main Models tab.
+
+See [Models & Tuning](models.md).
+
+## VRAM "Will-it-run" panel
+
+Before downloading, the **Discover** tab now shows a **Will-it-run** panel that predicts whether a model quant will fit your GPU and at what approximate speed. It factors in MoE active-vs-total parameters, your GPU's memory bandwidth (with manual overrides in Setup), and the quant's size — then rates it as **FITS**, **TIGHT**, or **CPU OFFLOAD** with an estimated tok/s. The same estimate appears as a badge when you expand a model in Discover.
+
+See [Discover](discover.md).

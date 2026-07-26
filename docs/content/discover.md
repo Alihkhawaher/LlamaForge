@@ -19,6 +19,8 @@ Each file is rated against your machine's total VRAM (all GPUs summed, read from
 - **CPU OFFLOAD** — file size exceeds total VRAM outright. The model will still load, but part of it runs on system RAM (slower).
 - **?** (unknown) — no VRAM was detected (`vram_mib` is zero or missing), so no rating can be made.
 
+Expanding a repo also shows a **Will-it-run** panel that predicts whether a selected quant will fit your GPU and at what approximate speed. It factors in MoE active-vs-total parameters, your GPU's memory bandwidth (with manual overrides in Setup), and the quant's size — then rates it as **FITS**, **TIGHT**, or **CPU OFFLOAD** with an estimated tok/s. The same estimate appears as a badge when you expand a model in the file list.
+
 Downloads run in a background thread (`hub.py` `DownloadManager`) that streams the file to disk and reports progress the dashboard polls. Pausing keeps the partial `.part` file on disk; resuming re-issues the request with an HTTP `Range` header starting from the bytes already downloaded, so a paused multi-gigabyte download picks up where it left off instead of restarting from zero. Cancelling instead deletes the partial file.
 
 Each result also carries platform tags (Windows/Linux/macOS) — GGUF runs on all three via llama.cpp, so GGUF results always show all three; the tag matching your current machine is highlighted.
@@ -43,6 +45,7 @@ Each result also carries platform tags (Windows/Linux/macOS) — GGUF runs on al
 | Search | `backend/hub.py` `search()` | Queries `huggingface.co/api/models?filter=gguf`, sorted by downloads/lastModified/likes. |
 | File listing | `backend/hub.py` `files()` | Lists a repo's `.gguf` files, collapsing sharded files and separating `mmproj` files. |
 | VRAM-fit rating | `backend/hub.py` `_fit()` | `fits`: size × 1.15 ≤ total VRAM. `tight`: size ≤ total VRAM (but not fits). `offload`: size > total VRAM. `unknown`: no VRAM detected. |
+| Will-it-run panel | `GET /api/vram/predict` | Predicts regime + tok/s for a repo+quant using MoE-aware model size, GPU bandwidth (with Setup overrides), and quant factor. |
 | Download engine | `backend/hub.py` `DownloadManager` | Background thread; one job at a time; progress polled via `/api/hub/progress`. |
 | Pause / resume | `DownloadManager.pause()` / `resume()` | Pause keeps the `.part` file; resume continues via an HTTP `Range` request from the bytes already on disk. |
 | Cancel | `DownloadManager.cancel()` | Stops the job and deletes the partial `.part` file. |
