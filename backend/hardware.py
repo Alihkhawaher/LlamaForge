@@ -31,6 +31,11 @@ def detect_gpus():
                          "compute_cap": cc})
     return gpus
 
+def detect_ram_gb():
+    """Total system RAM in GB (SI, /1e9 to match GPU vendor GB units), 0 if unknown."""
+    return round(osplat.total_ram_bytes() / 1e9, 1)
+
+
 def _detect_cpu_windows():
     # wmic is removed on recent Windows 11; use PowerShell CIM.
     out = _run(["powershell", "-NoProfile", "-Command",
