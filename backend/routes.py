@@ -345,10 +345,16 @@ def _autotune_recommend(body):
 def _autotune_refine(body):
     mid = body.get("model", "")
     intent = body.get("intent", "balanced")
-    base = body.get("knobs") or {}
+    base = body.get("knobs")
     m = _find_model(mid)
     if not m:
         return {"error": f"unknown model: {mid}"}
+    # If no base knobs provided, generate them via recommend first.
+    if not base:
+        rec = _autotune_recommend({"model": mid, "intent": intent})
+        if "error" in rec:
+            return rec
+        base = rec.get("knobs") or {}
 
     def load_fn(knobs):
         config.set_keys(mid, knobs)
@@ -358,11 +364,44 @@ def _autotune_refine(body):
             raise RuntimeError((res or {}).get("error", "load failed"))
 
     def measure_fn():
-        summ = stats.TRACKER.summary()
-        for row in summ.get("per_model", []):
-            if row.get("id") == mid:
-                return float(row.get("avg_tps") or 0.0)
-        return 0.0
+        """Send a real completion request and measure tok/s (generation only, excludes prompt eval)."""
+        import time
+        prompt = "Write a Python function that computes the Fibonacci sequence iteratively. Explain your approach briefly."
+        payload = {"model": mid, "prompt": prompt, "n_predict": 200, "stream": True}
+        url = router_base() + "/completion"
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        tokens = 0
+        first_tok = None
+        last_tok = None
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                for line in r:
+                    line = line.decode().strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    try:
+                        obj = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("stop"):
+                        break
+                    content = obj.get("content", "")
+                    if content:
+                        tokens += 1
+                        now = time.monotonic()
+                        if first_tok is None:
+                            first_tok = now
+                        last_tok = now
+        except Exception as e:
+            return 0.0
+        if first_tok is None or last_tok is None or tokens < 10:
+            return 0.0
+        elapsed = last_tok - first_tok
+        if elapsed < 0.01:
+            return 0.0
+        return round(tokens / elapsed, 1)
 
     out = autotune.refine(base, intent, load_fn, measure_fn)
     out["model"] = mid
