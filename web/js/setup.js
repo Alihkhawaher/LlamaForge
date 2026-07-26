@@ -38,6 +38,7 @@ export async function loadSetup() {
     ${!t.present&&t.installable?` <button data-install="${esc(name)}" style="padding:3px 8px;margin-left:8px">Install</button>`:""}
     ${!t.present&&!t.installable&&t.hint?`<div class="note" style="margin-top:4px">${esc(t.hint)}</div>`:""}</span></div>`;
   const gpuLines = (hw.gpus||[]).map(g => `<div class="kv"><span class="k">GPU ${esc(g.index)}</span><span class="v">${esc(g.name)} &middot; cc ${esc(g.compute_cap||"?")}</span></div>`).join("");
+  const bw = cfgOf().vram_bandwidths || {};
   setHTML(v, `
     <div class="card"><h3>Prerequisites</h3>
       ${Object.entries(p.tools).map(([n,t])=>toolRow(n,t)).join("")}
@@ -51,6 +52,16 @@ export async function loadSetup() {
       ${gpuLines}
       <div class="flags">${Object.entries(hw.cmake_flags).map(([k,val])=>`<span class="flagpill">${esc(k)}=${esc(val)}</span>`).join("")}</div>
       ${hw.notes.map(n=>`<div class="note">&bull; ${esc(n)}</div>`).join("")}
+    </div>
+    <div class="card"><h3>Speed Estimates <span style="color:var(--dim);font-weight:normal;font-size:11px">(advanced &mdash; optional)</span></h3>
+      <div class="note">The "Will it run?" panel and Discover speed badges estimate tok/s from memory bandwidth. Detected GPU presets are used by default; override here only if you've measured your machine. Blank = use the preset/default.</div>
+      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end">
+        <div class="fld"><label>VRAM GB/s</label><input id="bw-vram" type="number" min="0" step="any" placeholder="preset" value="${esc(String(bw.vram_bw ?? ""))}" style="width:110px"></div>
+        <div class="fld"><label>RAM GB/s</label><input id="bw-ram" type="number" min="0" step="any" placeholder="50" value="${esc(String(bw.ram_bw ?? ""))}" style="width:110px"></div>
+        <div class="fld"><label>Disk GB/s</label><input id="bw-disk" type="number" min="0" step="any" placeholder="5.7" value="${esc(String(bw.disk_bw ?? ""))}" style="width:110px"></div>
+        <button id="bw-save">Save</button>
+        <span class="msg" id="bw-msg"></span>
+      </div>
     </div>
     <div class="card"><h3>Scan Drives for Models</h3>
       <div class="actions"><button id="btn-scan">Scan for GGUF models</button><button class="ghost" id="btn-missing">Check for deleted models</button><span class="msg" id="scan-msg"></span></div>
@@ -110,6 +121,17 @@ export async function loadSetup() {
   if (autoSel) autoSel.onchange = async () => {
     await api("/api/config", {auto_load_model: autoSel.value});
     toast(autoSel.value?`Auto-load: ${autoSel.value}`:"Auto-load disabled", "ok");
+  };
+  const bwSave = $("#bw-save");
+  if (bwSave) bwSave.onclick = async () => {
+    const num = sel => { const val = $(sel).value.trim(); return val === "" ? undefined : Number(val); };
+    const ov = {};
+    const vram = num("#bw-vram"), ram = num("#bw-ram"), disk = num("#bw-disk");
+    if (vram !== undefined && !Number.isNaN(vram)) ov.vram_bw = vram;
+    if (ram !== undefined && !Number.isNaN(ram)) ov.ram_bw = ram;
+    if (disk !== undefined && !Number.isNaN(disk)) ov.disk_bw = disk;
+    await api("/api/config", {vram_bandwidths: ov});
+    const m = $("#bw-msg"); m.className = "msg ok"; m.textContent = Object.keys(ov).length ? "saved" : "cleared (using defaults)";
   };
   $("#net-lan").onchange = e => {
     $("#net-keyrow").style.display = e.target.checked ? "" : "none";

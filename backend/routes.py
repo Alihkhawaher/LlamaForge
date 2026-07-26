@@ -920,13 +920,30 @@ def post_hub_files(req):
 
 
 def post_vram_predict(req):
-    """Standalone 'will it run?' estimate for a repo + quant (Discover-independent)."""
+    """Standalone 'will it run?' estimate for a repo + quant (Discover-independent).
+    For GGUF repos whose config.json lacks geometry, fall back to the matching (or
+    largest) GGUF file's size so the estimate still resolves instead of going unknown."""
     b = req.body or {}
     repo = b.get("repo", "")
     if not repo:
         return 200, {"error": "repo is required"}
-    out = vram_predict.predict_remote(repo=repo, quant=b.get("quant", "q4_k_m"),
-                                      gguf_file=b.get("gguf_file"), cfg=cfg())
+    quant = b.get("quant", "q4_k_m")
+    gguf_file = b.get("gguf_file")
+    size_bytes = None
+    try:
+        ggufs = hub.files(repo, 0).get("files", [])
+        if ggufs:
+            qkey = quant.replace("_", "").replace("-", "").lower()
+            match = next((f for f in ggufs
+                          if qkey in f.get("path", "").replace("_", "").replace("-", "").lower()),
+                         None)
+            chosen = match or max(ggufs, key=lambda f: f.get("size", 0))
+            size_bytes = chosen.get("size")
+            gguf_file = gguf_file or chosen.get("path")
+    except Exception:
+        pass
+    out = vram_predict.predict_remote(repo=repo, quant=quant, gguf_file=gguf_file,
+                                      size_bytes=size_bytes, cfg=cfg())
     return 200, out
 
 
@@ -990,6 +1007,20 @@ def _v_theme(v): return v if v in ("", "light", "dark") else None
 def _v_dirs(v):
     return v if isinstance(v, list) and all(isinstance(x, str) for x in v) else None
 
+def _v_bandwidths(v):
+    """{vram_bw,ram_bw,disk_bw} -> GB/s. Only those keys, each a positive number.
+    An empty dict is valid and clears all overrides (back to presets/defaults)."""
+    if not isinstance(v, dict):
+        return None
+    out = {}
+    for k in ("vram_bw", "ram_bw", "disk_bw"):
+        if k in v and v[k] is not None:
+            n = v[k]
+            if isinstance(n, bool) or not isinstance(n, (int, float)) or n <= 0:
+                return None
+            out[k] = float(n)
+    return out
+
 
 CONFIG_WRITABLE = {
     "ui_mode":                 _v_mode,
@@ -1002,6 +1033,8 @@ CONFIG_WRITABLE = {
     "model_dirs":              _v_dirs,
     "anthropic_default_model": _v_str,
     "anthropic_shim_enabled":  _v_bool,
+    "vram_bandwidths":         _v_bandwidths,
+    "vram_predict_enabled":    _v_bool,
 }
 
 
