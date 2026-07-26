@@ -98,5 +98,27 @@ class TestPredictRemote(unittest.TestCase):
             vp._fetch_hf_config = orig
 
 
+class TestCacheKeying(unittest.TestCase):
+    def test_override_change_busts_cache(self):
+        orig = vp._fetch_hf_config
+        vp._CACHE.clear()
+        vp._CFG_CACHE.clear()
+        vp._fetch_hf_config = lambda repo: {"num_parameters": 8e9, "num_hidden_layers": 32}
+        try:
+            hw1 = vp.build_hardware(cfg={"vram_bandwidths": {"ram_bw": 40}},
+                                    gpus=[{"name": "RTX 5090", "vram_mib": 32768}], ram_gb=64.0)
+            hw2 = vp.build_hardware(cfg={"vram_bandwidths": {"ram_bw": 80}},
+                                    gpus=[{"name": "RTX 5090", "vram_mib": 32768}], ram_gb=64.0)
+            self.assertNotEqual(vp._hw_sig(hw1), vp._hw_sig(hw2))
+            vp.predict_remote("r/m", hw=hw1)
+            vp.predict_remote("r/m", hw=hw2)
+            remote_keys = [k for k in vp._CACHE if k[0] == "remote"]
+            self.assertEqual(len(remote_keys), 2)
+        finally:
+            vp._fetch_hf_config = orig
+            vp._CACHE.clear()
+            vp._CFG_CACHE.clear()
+
+
 if __name__ == "__main__":
     unittest.main()
