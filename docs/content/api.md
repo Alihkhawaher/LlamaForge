@@ -39,8 +39,8 @@ These are the endpoints external coding agents (Claude Code, Codex, etc.) talk t
 | POST | `/api/presets/apply` | Apply a saved preset's knobs to a model, same reload behavior as `/api/save`. |
 | GET | `/api/model/metadata` | GGUF metadata for a model id (query param `model`). |
 | GET | `/api/model/diag` | Diagnostic read of the router log against a model's merged (`[*]` + per-model) settings (query param `model`). |
-| POST | `/api/autotune/recommend` | Recommend knob values for a model given hardware constraints. |
-| POST | `/api/autotune/refine` | Refine a prior autotune recommendation. |
+| POST | `/api/autotune/recommend` | Recommend knob values for a model given hardware constraints. Body: `{model, intent}` where `intent` is `balanced`, `speed`, `context`, or `coding`. Returns `{knobs, reasons}`. |
+| POST | `/api/autotune/refine` | Auto-generate knob recommendations, benchmark candidates with real completion requests (~200 tokens), and return the fastest config. Body: `{model, intent}` (knobs optional; generated if omitted). Returns `{knobs, measurements: {candidates: [{knobs, tok_s}], chosen_tok_s}}`. |
 | GET | `/api/scan/missing` | List `models.ini` entries whose GGUF file no longer exists on disk. |
 | POST | `/api/scan` | Scan directories (`model_dirs` by default) for GGUF files. |
 | POST | `/api/scan/apply` | Register scanned entries into `models.ini` and reapply ctx-size defaults. |
@@ -56,6 +56,12 @@ These are the endpoints external coding agents (Claude Code, Codex, etc.) talk t
 | GET | `/api/build/info` | Current `llama.cpp` commit, available updates, and recommended/saved CMake flags. |
 | GET | `/api/build/log` | Tail of the build log plus builder state. |
 | POST | `/api/build/start` | Start (re)building `llama.cpp` with the given (or saved/recommended) CMake flags. |
+
+## VRAM prediction
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/vram/predict` | Predict whether a model quant will fit your GPU and at what approximate speed. Query params: `repo` (HF repo id), `quant` (e.g. `Q4_K_M`). Returns `{regime, tok_s, model_size_bytes, active_size_bytes}`. Factors in MoE active-vs-total parameters and GPU memory bandwidth (with Setup overrides). |
 
 ## Model Hub (download)
 
