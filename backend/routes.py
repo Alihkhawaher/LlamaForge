@@ -22,6 +22,7 @@ import json, os, subprocess, sys, urllib.request, urllib.error, urllib.parse
 
 import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats
 import autotune, anthropic_shim, agentsetup, wiki, docs
+import vram_predict
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag, backends
 from builder import BuildManager
@@ -898,7 +899,16 @@ def post_hub_search(req):
 
 def post_hub_files(req):
     try:
-        return 200, hub.files(req.body.get("repo", ""), total_vram_mib())
+        repo = req.body.get("repo", "")
+        listing = hub.files(repo, total_vram_mib())
+        c = cfg()
+        if c.get("vram_predict_enabled", True):
+            hw = vram_predict.build_hardware(c)
+            for f in listing.get("files", []):
+                f["predict"] = vram_predict.predict_remote(
+                    repo=repo, gguf_file=f.get("path"), size_bytes=f.get("size"),
+                    cfg=c, hw=hw)
+        return 200, listing
     except Exception as e:
         return 200, {"error": str(e), "files": [], "mmproj": []}
 
