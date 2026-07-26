@@ -56,5 +56,47 @@ class TestPredictLocal(unittest.TestCase):
         self.assertIsNotNone(m)
 
 
+class TestPredictRemote(unittest.TestCase):
+    def _hw(self):
+        return vp.build_hardware(cfg={}, gpus=[{"name": "RTX 5090", "vram_mib": 32768}],
+                                 ram_gb=64.0)
+
+    def test_moe_config_maps_active(self):
+        cfgj = {"num_parameters": 106e9, "num_hidden_layers": 47,
+                "num_experts": 128, "num_experts_per_tok": 8}
+        m, conf = vp._model_from_hf(cfgj, "q4_k_m", None)
+        self.assertLess(m.active_params, m.total_params)
+        self.assertEqual(m.n_layers, 47)
+        self.assertEqual(conf, "high")
+
+    def test_dense_config_estimates_params(self):
+        cfgj = {"hidden_size": 4096, "num_hidden_layers": 32,
+                "intermediate_size": 14336, "vocab_size": 128000}
+        m, conf = vp._model_from_hf(cfgj, "q4_k_m", None)
+        self.assertGreater(m.total_params, 6e9)
+        self.assertEqual(m.active_params, m.total_params)
+
+    def test_fetch_failure_uses_size_fallback(self):
+        orig = vp._fetch_hf_config
+        vp._fetch_hf_config = lambda repo: None
+        try:
+            out = vp.predict_remote("acme/model", quant="q4_k_m",
+                                    size_bytes=int(20e9), cfg={}, hw=self._hw())
+            self.assertEqual(out["source"], "size-fallback")
+            self.assertEqual(out["confidence"], "low")
+            self.assertIsNotNone(out["tok_s"])
+        finally:
+            vp._fetch_hf_config = orig
+
+    def test_fetch_failure_no_size_is_unknown(self):
+        orig = vp._fetch_hf_config
+        vp._fetch_hf_config = lambda repo: None
+        try:
+            out = vp.predict_remote("acme/model", quant="q4_k_m", cfg={}, hw=self._hw())
+            self.assertEqual(out["confidence"], "unknown")
+        finally:
+            vp._fetch_hf_config = orig
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -148,3 +148,87 @@ def predict_local(gguf_path, size_bytes=None, cfg=None, context=4096, hw=None, m
         return out
     except Exception:
         return _unknown("prediction unavailable")
+
+
+def _fetch_hf_config(repo):
+    """Best-effort GET of a repo's config.json (cached per repo). None on failure."""
+    if repo in _CFG_CACHE:
+        return _CFG_CACHE[repo]
+    try:
+        req = urllib.request.Request(f"{HF}/{repo}/resolve/main/config.json", headers=UA)
+        with urllib.request.urlopen(req, timeout=20) as f:
+            cfgj = json.loads(f.read().decode())
+    except Exception:
+        cfgj = None
+    _CFG_CACHE[repo] = cfgj
+    return cfgj
+
+
+def _estimate_total_params(cfg):
+    """Rough dense param count from a transformers config, or None."""
+    h = cfg.get("hidden_size") or cfg.get("n_embd")
+    L = cfg.get("num_hidden_layers") or cfg.get("n_layer")
+    inter = cfg.get("intermediate_size") or (4 * h if h else None)
+    vocab = cfg.get("vocab_size", 128000)
+    if not (h and L and inter):
+        return None
+    return (4 * h * h + 3 * h * inter) * L + 2 * vocab * h
+
+
+def _bpw_from_gguf_name(fname):
+    m = re.search(r"(ud-)?(i?q\d[\w]*|f16|bf16)", (fname or "").lower())
+    return m.group(0) if m else None
+
+
+def _model_from_hf(cfgj, quant, gguf_file):
+    """Build a vramwise Model from a HF config.json. Returns (Model|None, confidence)."""
+    total = cfgj.get("num_parameters") or _estimate_total_params(cfgj)
+    if not total:
+        return None, "low"
+    layers = cfgj.get("num_hidden_layers") or cfgj.get("n_layer") or 32
+    n_exp = (cfgj.get("num_experts") or cfgj.get("n_routed_experts")
+             or cfgj.get("num_local_experts"))
+    top_k = (cfgj.get("num_experts_per_tok") or cfgj.get("moe_topk")
+             or cfgj.get("num_experts_per_token"))
+    if n_exp and top_k:
+        active = min(total, total * (top_k / n_exp) * 0.85 + total * 0.10)
+    else:
+        active = total
+    bpw, known = _bpw_from_quant(_bpw_from_gguf_name(gguf_file) or quant)
+    conf = "high" if known else "estimate"
+    return physics.Model(name="model", total_params=float(total),
+                         active_params=float(active), bpw=bpw, n_layers=int(layers)), conf
+
+
+def _dense_from_size(size_bytes, quant, gguf_file):
+    bpw, _ = _bpw_from_quant(_bpw_from_gguf_name(gguf_file) or quant)
+    total = size_bytes * 8.0 / bpw
+    return physics.Model(name="model", total_params=total, active_params=total,
+                         bpw=bpw, n_layers=32)
+
+
+def predict_remote(repo, quant="q4_k_m", gguf_file=None, size_bytes=None,
+                   cfg=None, context=4096, hw=None):
+    """Estimate for a repo BEFORE download, from its HF config.json. Never raises."""
+    try:
+        hw = hw if hw is not None else build_hardware(cfg)
+        key = ("remote", repo, quant, gguf_file, _hw_sig(hw), context)
+        hit = _cache_get(key)
+        if hit is not None:
+            return hit
+        cfgj = _fetch_hf_config(repo)
+        if cfgj:
+            model, conf = _model_from_hf(cfgj, quant, gguf_file)
+            source = "hf-config"
+        else:
+            model, conf, source = None, "low", "size-fallback"
+        if model is None:
+            if size_bytes:
+                model, conf, source = _dense_from_size(size_bytes, quant, gguf_file), "low", "size-fallback"
+            else:
+                return _unknown("no model geometry available")
+        out = _normalize(physics.predict(model, hw, context=context), conf, source)
+        _cache_put(key, out)
+        return out
+    except Exception:
+        return _unknown("prediction unavailable")
