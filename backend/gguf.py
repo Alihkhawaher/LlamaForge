@@ -158,6 +158,7 @@ def metadata(path):
         "head_count":       a("attention.head_count"),
         "vocab_size":       a("vocab_size"),
         "expert_count":     a("expert_count"),
+        "expert_used_count": a("expert_used_count"),
         "rope_freq_base":   a("rope.freq_base"),
         "rope_scaling":     a("rope.scaling.type"),
     }

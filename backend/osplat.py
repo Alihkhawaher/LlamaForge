@@ -87,6 +87,35 @@ def mac_mem_bytes():
     return int(out) if out.isdigit() else 0
 
 
+def parse_meminfo(text):
+    """MemTotal (bytes) from /proc/meminfo contents; 0 if absent."""
+    for line in text.splitlines():
+        if line.startswith("MemTotal:"):
+            parts = line.split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                return int(parts[1]) * 1024   # value is in kB
+    return 0
+
+
+def total_ram_bytes():
+    """Total physical RAM in bytes across platforms; 0 if undetectable.
+    Never raises."""
+    try:
+        if IS_MAC:
+            return int(mac_mem_bytes() or 0)
+        if IS_LINUX:
+            with open("/proc/meminfo", encoding="utf-8") as f:
+                return parse_meminfo(f.read())
+        if IS_WIN:
+            out = run_text(["powershell", "-NoProfile", "-Command",
+                            "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"])
+            digits = out.strip()
+            return int(digits) if digits.isdigit() else 0
+    except Exception:
+        return 0
+    return 0
+
+
 def parse_vm_stat(text):
     """Free+inactive bytes from `vm_stat` output (best-effort)."""
     m = re.search(r"page size of (\d+)", text)

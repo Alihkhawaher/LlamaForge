@@ -106,7 +106,7 @@ function knobGroups(m, schema) {
 function editorLive(m) {
   return m.backend === "vllm"
     ? `${diagBlock(m)}${modelMeta(m)}`
-    : `${diagBlock(m)}${metaBlock(m)}${modelMeta(m)}${presetBar(m)}`;
+    : `${diagBlock(m)}${metaBlock(m)}${modelMeta(m)}${presetBar(m)}${autoTuneBar(m)}`;
 }
 function editorButtons(m) {
   if (m.backend === "vllm") {
@@ -434,6 +434,74 @@ async function fetchMeta(id) {
   if (openId === id) renderModels();
 }
 
+/* ---------- autotune bar ---------- */
+function autoTuneBar(m) {
+  return `<div class="tunebar">
+    <span class="tunebar-label" title="⚠ Benchmarks run a real completion request (~200 tokens) per candidate. Results depend on your hardware and current system load.">⚙ Refine</span>
+    <select data-tune-intent>
+      <option value="balanced">Balanced</option>
+      <option value="speed">Max speed</option>
+      <option value="context">Max context</option>
+      <option value="coding">Coding</option>
+    </select>
+    <button class="qbtn" data-tune-refine="${esc(m.id)}">Run (~1 min)</button>
+  </div>
+  <div class="tunebar-results" data-tune-results hidden></div>`;
+}
+function applyTuneResult(row, rec) {
+  const knobs = rec.knobs || {}, changed = [];
+  $$("[data-k]", row).forEach(el => {
+    const k = el.dataset.k;
+    if (knobs[k] != null && knobs[k] !== el.value) {
+      el.value = knobs[k];
+      if (el.value.trim()) el.classList.add("set");
+      changed.push(k);
+    }
+  });
+  const msg = $("[data-msg]", row);
+  if (msg && changed.length) {
+    msg.className = "msg work";
+    msg.textContent = `${changed.length} knobs updated — unsaved changes`;
+  }
+  const refineBtn = row.querySelector("[data-tune-refine]");
+  if (refineBtn) refineBtn.hidden = false;
+  row._tuneRec = rec;
+}
+function renderTuneResults(row, measurements) {
+  const el = $("[data-tune-results]", row);
+  if (!el) return;
+  const cands = measurements?.candidates || [];
+  if (!cands.length) { el.hidden = true; return; }
+  const bestTok = measurements?.chosen_tok_s || 0;
+  const rows = cands.map(c => {
+    const tok = (c.tok_s || 0).toFixed(1);
+    const isBest = Math.abs(c.tok_s - bestTok) < 0.01;
+    const diff = Object.entries(c.knobs).filter(([k,v]) => {
+      const base = cands[0]?.knobs?.[k];
+      return base != null && base !== v;
+    }).map(([k,v]) => `${k}=${v}`).join(", ");
+    const label = diff ? diff : "base";
+    return `<div class="tunebar-cand${isBest?" best":""}"><span class="tunebar-cand-label">${esc(label)}</span><span class="tunebar-cand-tok">${tok} tok/s</span>${isBest?'<span class="tunebar-cand-best">← chosen</span>':''}</div>`;
+  }).join("");
+  el.innerHTML = `<div class="tunebar-cand-header"><span>candidate</span><span>speed</span></div>${rows}`;
+  el.hidden = false;
+}
+async function handleTuneRefine(modelId) {
+  const row = $(`.row[data-id="${CSS.escape(modelId)}"]`); if (!row) return;
+  const intent = $("[data-tune-intent]", row)?.value || "balanced";
+  const btn = $("[data-tune-refine]", row);
+  btn.disabled = true; btn.textContent = "benchmarking...";
+  try {
+    const r = await api("/api/autotune/refine", {model: modelId, intent});
+    if (r.error) { toast(r.error, "err"); return; }
+    const tok = (r.measurements?.chosen_tok_s || 0).toFixed(1);
+    applyTuneResult(row, {knobs: r.knobs, intent});
+    renderTuneResults(row, r.measurements);
+    toast(`Refined — ${tok} tok/s`, "ok");
+  } catch (e) { toast("Refine failed: " + e, "err"); }
+  btn.disabled = false; btn.textContent = "Run (~1 min)";
+}
+
 /* ---------- inline load-failure diagnosis ---------- */
 function diagBlock(m) {
   if (!m.failed) return "";
@@ -586,6 +654,9 @@ export function initModels() {
     }
     const pSave = e.target.closest("[data-preset-save]");
     if (pSave) { e.stopPropagation(); await savePresetFrom(pSave.dataset.presetSave); return; }
+    // autotune
+    const tRef = e.target.closest("[data-tune-refine]");
+    if (tRef) { e.stopPropagation(); await handleTuneRefine(tRef.dataset.tuneRefine); return; }
     const head = e.target.closest("#view-models .rhead");
     if (head && !e.target.closest("button,input")) {
       const id = head.parentElement.dataset.id;
