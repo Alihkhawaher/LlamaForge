@@ -22,6 +22,7 @@ import json, os, subprocess, sys, urllib.request, urllib.error, urllib.parse
 
 import config, argspec, hardware, osplat, prereqs, scanner, hub, router_ctl, stats
 import autotune, anthropic_shim, agentsetup, wiki, docs
+import vram_predict
 import wsl, vllm_ctl, vllm_registry, vllm_setup, vllm_job, vllm_hub, vllm_download
 import gguf, diag, backends
 from builder import BuildManager
@@ -330,7 +331,13 @@ def _autotune_recommend(body):
     except OSError:
         size = None
     hw = {"gpus": hardware.detect_gpus(), "cpu": hardware.detect_cpu()}
-    rec = autotune.recommend(meta, hw, intent, size_bytes=size)
+    pred = None
+    try:
+        if cfg().get("vram_predict_enabled", True) and path:
+            pred = vram_predict.predict_local(path, size_bytes=size, cfg=cfg())
+    except Exception:
+        pred = None
+    rec = autotune.recommend(meta, hw, intent, size_bytes=size, prediction=pred)
     rec.update({"model": mid, "intent": intent})
     return rec
 
@@ -338,10 +345,16 @@ def _autotune_recommend(body):
 def _autotune_refine(body):
     mid = body.get("model", "")
     intent = body.get("intent", "balanced")
-    base = body.get("knobs") or {}
+    base = body.get("knobs")
     m = _find_model(mid)
     if not m:
         return {"error": f"unknown model: {mid}"}
+    # If no base knobs provided, generate them via recommend first.
+    if not base:
+        rec = _autotune_recommend({"model": mid, "intent": intent})
+        if "error" in rec:
+            return rec
+        base = rec.get("knobs") or {}
 
     def load_fn(knobs):
         config.set_keys(mid, knobs)
@@ -351,11 +364,44 @@ def _autotune_refine(body):
             raise RuntimeError((res or {}).get("error", "load failed"))
 
     def measure_fn():
-        summ = stats.TRACKER.summary()
-        for row in summ.get("per_model", []):
-            if row.get("id") == mid:
-                return float(row.get("avg_tps") or 0.0)
-        return 0.0
+        """Send a real completion request and measure tok/s (generation only, excludes prompt eval)."""
+        import time
+        prompt = "Write a Python function that computes the Fibonacci sequence iteratively. Explain your approach briefly."
+        payload = {"model": mid, "prompt": prompt, "n_predict": 200, "stream": True}
+        url = router_base() + "/completion"
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(url, data=data, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        tokens = 0
+        first_tok = None
+        last_tok = None
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                for line in r:
+                    line = line.decode().strip()
+                    if not line or not line.startswith("data: "):
+                        continue
+                    try:
+                        obj = json.loads(line[6:])
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("stop"):
+                        break
+                    content = obj.get("content", "")
+                    if content:
+                        tokens += 1
+                        now = time.monotonic()
+                        if first_tok is None:
+                            first_tok = now
+                        last_tok = now
+        except Exception as e:
+            return 0.0
+        if first_tok is None or last_tok is None or tokens < 10:
+            return 0.0
+        elapsed = last_tok - first_tok
+        if elapsed < 0.01:
+            return 0.0
+        return round(tokens / elapsed, 1)
 
     out = autotune.refine(base, intent, load_fn, measure_fn)
     out["model"] = mid
@@ -898,9 +944,46 @@ def post_hub_search(req):
 
 def post_hub_files(req):
     try:
-        return 200, hub.files(req.body.get("repo", ""), total_vram_mib())
+        repo = req.body.get("repo", "")
+        listing = hub.files(repo, total_vram_mib())
+        c = cfg()
+        if c.get("vram_predict_enabled", True):
+            hw = vram_predict.build_hardware(c)
+            for f in listing.get("files", []):
+                f["predict"] = vram_predict.predict_remote(
+                    repo=repo, gguf_file=f.get("path"), size_bytes=f.get("size"),
+                    cfg=c, hw=hw)
+        return 200, listing
     except Exception as e:
         return 200, {"error": str(e), "files": [], "mmproj": []}
+
+
+def post_vram_predict(req):
+    """Standalone 'will it run?' estimate for a repo + quant (Discover-independent).
+    For GGUF repos whose config.json lacks geometry, fall back to the matching (or
+    largest) GGUF file's size so the estimate still resolves instead of going unknown."""
+    b = req.body or {}
+    repo = b.get("repo", "")
+    if not repo:
+        return 200, {"error": "repo is required"}
+    quant = b.get("quant", "q4_k_m")
+    gguf_file = b.get("gguf_file")
+    size_bytes = None
+    try:
+        ggufs = hub.files(repo, 0).get("files", [])
+        if ggufs:
+            qkey = quant.replace("_", "").replace("-", "").lower()
+            match = next((f for f in ggufs
+                          if qkey in f.get("path", "").replace("_", "").replace("-", "").lower()),
+                         None)
+            chosen = match or max(ggufs, key=lambda f: f.get("size", 0))
+            size_bytes = chosen.get("size")
+            gguf_file = gguf_file or chosen.get("path")
+    except Exception:
+        pass
+    out = vram_predict.predict_remote(repo=repo, quant=quant, gguf_file=gguf_file,
+                                      size_bytes=size_bytes, cfg=cfg())
+    return 200, out
 
 
 def post_hub_download(req):
@@ -963,6 +1046,20 @@ def _v_theme(v): return v if v in ("", "light", "dark") else None
 def _v_dirs(v):
     return v if isinstance(v, list) and all(isinstance(x, str) for x in v) else None
 
+def _v_bandwidths(v):
+    """{vram_bw,ram_bw,disk_bw} -> GB/s. Only those keys, each a positive number.
+    An empty dict is valid and clears all overrides (back to presets/defaults)."""
+    if not isinstance(v, dict):
+        return None
+    out = {}
+    for k in ("vram_bw", "ram_bw", "disk_bw"):
+        if k in v and v[k] is not None:
+            n = v[k]
+            if isinstance(n, bool) or not isinstance(n, (int, float)) or n <= 0:
+                return None
+            out[k] = float(n)
+    return out
+
 
 CONFIG_WRITABLE = {
     "ui_mode":                 _v_mode,
@@ -975,6 +1072,8 @@ CONFIG_WRITABLE = {
     "model_dirs":              _v_dirs,
     "anthropic_default_model": _v_str,
     "anthropic_shim_enabled":  _v_bool,
+    "vram_bandwidths":         _v_bandwidths,
+    "vram_predict_enabled":    _v_bool,
 }
 
 
@@ -1209,6 +1308,7 @@ POST_ROUTES = {
     "/api/scan/prune":          post_scan_prune,
     "/api/hub/search":          post_hub_search,
     "/api/hub/files":           post_hub_files,
+    "/api/vram/predict":        post_vram_predict,
     "/api/hub/download":        post_hub_download,
     "/api/hub/cancel":          post_hub_cancel,
     "/api/hub/pause":           post_hub_pause,

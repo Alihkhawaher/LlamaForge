@@ -65,6 +65,20 @@ function fitBadge(fit) {
   const col = cls==="ok"?"var(--green)":cls==="work"?"var(--amber)":cls==="err"?"var(--red)":"var(--dim)";
   return `<span class="tag" style="color:${col};border-color:${col}">${txt}</span>`;
 }
+// vramwise placement + speed estimate (from /api/hub/files predict). Empty when
+// unavailable so Discover degrades to the plain fit badge above.
+const REGIME_LABEL = {
+  "gpu-resident": ["FITS", "var(--green)"],
+  "hybrid":       ["HYBRID", "var(--amber)"],
+  "streaming":    ["STREAM", "var(--red)"],
+};
+function predictBadge(p) {
+  if (!p || p.confidence === "unknown" || !p.regime) return "";
+  const [txt, col] = REGIME_LABEL[p.regime] || ["?", ""];
+  const tok = (p.tok_s != null) ? `~${esc(String(p.tok_s))} tok/s` : "";
+  const faint = (p.confidence === "low") ? "opacity:.6" : "";
+  return `<span class="tag" style="color:${col};border-color:${col};${faint}" title="${esc(p.note || "")}">${esc(txt)}${tok ? " &middot; " + tok : ""}</span>`;
+}
 
 export function loadDiscover() {
   if (discoverLoaded) return;
@@ -151,10 +165,11 @@ async function hubFiles(row) {
   setHTML(box, `
     ${mm?`<div class="note">vision model - the smallest mmproj (${esc(mm)}) will be downloaded too</div>`:""}
     <div class="list" style="margin-top:8px">${r.files.map(f=>`
-      <div class="row"><div class="rhead" style="grid-template-columns:1fr auto auto auto;cursor:default">
+      <div class="row"><div class="rhead" style="grid-template-columns:1fr auto auto auto auto;cursor:default">
         <span class="mid">${esc(f.path)}${f.shards>1?`<span class="tag">${f.shards} shards</span>`:""}</span>
         <span class="ctxpill">${esc((f.size/1e9).toFixed(2))} GB</span>
         ${fitBadge(f.fit)}
+        ${predictBadge(f.predict)}
         <button data-dl="${esc(f.path)}" data-shards="${f.shards}" ${f.fit==="offload"?'title="larger than VRAM - will be slow"':""}>Download</button>
       </div></div>`).join("")}</div>`);
   $$("[data-dl]", box).forEach(b => b.onclick = () =>

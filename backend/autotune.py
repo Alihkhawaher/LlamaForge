@@ -35,7 +35,7 @@ def _fit_ngl(layers, weights_mib, budget_mib):
     return str(max(0, int(layers * budget_mib / weights_mib)))
 
 
-def recommend(meta, hw, intent="balanced", size_bytes=None):
+def recommend(meta, hw, intent="balanced", size_bytes=None, prediction=None):
     intent = intent if intent in INTENTS else "balanced"
     knobs, why = {}, {}
     cpu = hw.get("cpu") or {}
@@ -77,6 +77,12 @@ def recommend(meta, hw, intent="balanced", size_bytes=None):
 
     # Intent-specific shaping (KV type, batch, tensor-split, sampling) — Task 3.
     _apply_intent(knobs, why, hw, intent)
+    if prediction and prediction.get("regime"):
+        tok = prediction.get("tok_s")
+        tail = f" Predicted {prediction['regime']}" + (f" ~{tok} tok/s." if tok is not None else ".")
+        if "n-gpu-layers" in why:
+            why["n-gpu-layers"] += tail
+        return {"knobs": knobs, "rationale": why, "prediction": prediction}
     return {"knobs": knobs, "rationale": why}
 
 
