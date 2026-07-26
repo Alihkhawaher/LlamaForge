@@ -919,6 +919,17 @@ def post_hub_files(req):
         return 200, {"error": str(e), "files": [], "mmproj": []}
 
 
+def post_vram_predict(req):
+    """Standalone 'will it run?' estimate for a repo + quant (Discover-independent)."""
+    b = req.body or {}
+    repo = b.get("repo", "")
+    if not repo:
+        return 200, {"error": "repo is required"}
+    out = vram_predict.predict_remote(repo=repo, quant=b.get("quant", "q4_k_m"),
+                                      gguf_file=b.get("gguf_file"), cfg=cfg())
+    return 200, out
+
+
 def post_hub_download(req):
     repo   = req.body.get("repo", "")
     first  = req.body.get("path", "")
@@ -1225,6 +1236,7 @@ POST_ROUTES = {
     "/api/scan/prune":          post_scan_prune,
     "/api/hub/search":          post_hub_search,
     "/api/hub/files":           post_hub_files,
+    "/api/vram/predict":        post_vram_predict,
     "/api/hub/download":        post_hub_download,
     "/api/hub/cancel":          post_hub_cancel,
     "/api/hub/pause":           post_hub_pause,
