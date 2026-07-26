@@ -901,10 +901,9 @@ def post_scan_apply(req):
     entries = req.body.get("entries", [])
     for e in entries:
         keys = {"model": e["model"]}
-        if e.get("mmproj"):
-            keys["mmproj"] = e["mmproj"]
-        if e.get("embeddings"):
-            keys["embeddings"] = "true"
+        # Always pass mmproj/embeddings so stale values are cleared on re-scan.
+        keys["mmproj"] = e.get("mmproj") or None
+        keys["embeddings"] = "true" if e.get("embeddings") else None
         config.set_keys(e["id"], keys)
     config.apply_ctx_defaults()
     router("/models?reload=1")

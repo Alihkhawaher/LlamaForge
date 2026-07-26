@@ -4,7 +4,7 @@ model entries the router understands. Portable: no hardcoded paths.
 Rules:
 - skip mmproj* (vision projectors; attached to their model instead)
 - skip recycle bin and obvious non-model shards handling
-- attach an mmproj sibling as the model's `mmproj`
+- attach an mmproj sibling only to vision-capable models
 - treat *embed* models as embedding endpoints
 - multi-shard sets (foo-00001-of-00005.gguf) collapse to the first shard
 - disambiguate duplicate names by parent-folder prefix
@@ -13,6 +13,12 @@ import os, re
 from collections import defaultdict
 
 import osplat
+
+# Architectures known to use an mmproj sidecar (vision/multimodal).
+_VISION_ARCHES = frozenset({
+    "clip", "mllama", "qwen2_vl", "llava", "moondream", "nanollava",
+    "idefics3", "minicpm_v", "molmo", "pixtral", "granite_vision",
+})
 
 def _windows_drives():
     import string, ctypes
@@ -108,9 +114,13 @@ def build_entries(paths):
         except OSError:
             gib = 0
         e = {"id": mk_id(p), "model": p.replace("\\", "/"), "gib": gib}
+        # Only attach mmproj if the model is vision-capable.
         mm = mmproj_by_dir.get(os.path.dirname(p))
         if mm:
-            e["mmproj"] = mm.replace("\\", "/")
+            from gguf import metadata
+            arch = (metadata(p) or {}).get("architecture", "")
+            if arch in _VISION_ARCHES:
+                e["mmproj"] = mm.replace("\\", "/")
         if _is_embed(p):
             e["embeddings"] = True
         entries.append(e)
