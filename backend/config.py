@@ -35,6 +35,16 @@ DEFAULTS = {
     "vllm_port":   8081,                      # port vLLM serves on (WSL localhost-forwarded to Windows)
     "cmake_flags": {},                       # persisted build flags (from hardware detect)
     "git_remote":  "https://github.com/ggml-org/llama.cpp",
+    # ik_llama mirrors the llama.cpp path trio and, like it, ships empty: these
+    # belong to bootstrap and this machine, not to the defaults every install
+    # inherits. An unset ik_llama_server_bin simply leaves the engine disabled.
+    "ik_llama_src":    "",                    # git checkout of ik_llama.cpp
+    "ik_llama_build_dir": "",                 # cmake build dir (usually <src>/build)
+    "ik_llama_server_bin": "",                # path to ik_llama's llama-server(.exe)
+    "ik_llama_models_ini": "",                # its own models.ini ("" -> sibling of models_ini)
+    "ik_llama_git_remote": "https://github.com/ikawrakow/ik_llama.cpp",
+    "ik_llama_cmake_flags": {},               # separate build flags for ik_llama
+    "active_engine": "llamacpp",              # which binary the router uses: llamacpp | ikllama
     "auto_load_model": "",                    # model id to load automatically on launch ("" = none)
     "presets":     {},                       # named knob sets: {name: {knob: value}}
     "ui_mode":     "lite",                    # "lite" (curated knobs) or "advanced" (all ~220)
@@ -150,7 +160,20 @@ def migrate():
 _INI_LOCK = threading.RLock()
 
 def ini_path():
-    return load()["models_ini"]
+    """The models.ini the active engine reads.
+
+    ik_llama gets its own registry because the two binaries accept different
+    knobs; when the user has not named one, derive a sibling of the llama.cpp
+    file. Split on the extension rather than str.replace(".ini", ...), which is
+    a global replace and rewrites any directory that happens to contain ".ini"."""
+    c = load()
+    if c.get("active_engine") == "ikllama":
+        p = c.get("ik_llama_models_ini")
+        if p:
+            return p
+        stem, ext = os.path.splitext(c["models_ini"])
+        return stem + "-ikllama" + (ext or ".ini")
+    return c["models_ini"]
 
 def read_sections(path=None):
     """Return {section: {key: value}} for all sections including [*]."""
@@ -320,11 +343,19 @@ def apply_ctx_defaults(path=None):
     """Set sane ctx-size defaults across models.ini, idempotently.
 
     - global [*]: ctx-size = 150000 (the baseline for models that support it)
-    - each model: an explicit ctx-size only when it can't reach the global -
-      100000, capped at the model's GGUF-trained length (never over-extends).
-      Models that support >= 150000 have their per-model override removed so they
-      inherit the global; models whose trained length can't be read are left
-      untouched. Only sections that actually change are rewritten.
+    - each model with no ctx-size of its own: get one when it can't reach the
+      global - 100000, capped at the model's GGUF-trained length.
+    - each model that already has one: keep it, except to clamp a value that
+      over-extends past the trained length.
+
+    This runs on every panel startup, so it only ever fills a gap or clamps an
+    impossible value; it never overrules a ctx-size that is already there.
+    A trained length is not a VRAM budget: a 27B Q6_K trained to 262144 still
+    OOMs at 150000 on a 32 GB box, and the explicit 65536 sitting in the file is
+    how the user encoded that. Deleting it (the old behaviour, on the theory
+    that the model "supports the global") silently reimposed a config that could
+    not load. Models whose trained length can't be read are left untouched, and
+    only sections that actually change are rewritten.
 
     Returns {"changed": [section, ...]}.
     """
@@ -353,11 +384,17 @@ def apply_ctx_defaults(path=None):
             if d is None:                   # unknown trained length -> leave as-is
                 continue
             cur = kv.get("ctx-size")
-            if d == 0:                      # supports the global default
-                if cur is not None:
-                    _set_keys_locked(sec, {"ctx-size": None}, path)
-                    changed.append(sec)
-            elif cur != str(d):             # needs an explicit smaller override
+            if d == 0:                      # can reach the global; nothing to add
+                continue
+            if cur is None:                 # gap -> fill it
+                _set_keys_locked(sec, {"ctx-size": str(d)}, path)
+                changed.append(sec)
+                continue
+            try:                            # present -> only clamp over-extension
+                over = int(cur) > d
+            except ValueError:              # unparseable: the user's problem, not ours
+                continue
+            if over:
                 _set_keys_locked(sec, {"ctx-size": str(d)}, path)
                 changed.append(sec)
         return {"changed": changed}
