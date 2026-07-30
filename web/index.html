@@ -108,7 +108,11 @@ body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;ma
 .side-spacer{flex:1}
 .side-settings{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--hair)}
 .side-settings .mode-toggle{margin-left:0}
-#content{min-width:0;padding:0 26px 26px}
+/* Column layout so the credit line can be pushed to the bottom instead of
+   floating under the last card on short tabs (Will-it-run was the worst case). */
+#content{min-width:0;padding:0 26px 26px;display:flex;flex-direction:column;min-height:100vh}
+#content .views{flex:1 0 auto}
+#content .credit{margin-top:auto;padding-top:22px}
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;
   padding:14px 0;border-bottom:1px solid var(--hair);margin-bottom:16px;position:sticky;top:0;background:var(--bg);z-index:5}
 #page-title{font-family:var(--disp);font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-strong);font-size:15px}
@@ -121,7 +125,10 @@ body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;ma
 .gpu .idx{color:var(--amber-text);font-size:11px;letter-spacing:.2em}
 .meter{height:22px;background:var(--inset);border:1px solid var(--hair);display:flex;gap:2px;padding:3px}
 .seg{flex:1;background:var(--seg-bg)}.seg.on{background:var(--amber);box-shadow:0 0 6px var(--amber-dim)}.seg.hot{background:var(--red)}
-.gpu .stats{display:flex;justify-content:space-between;margin-top:9px;color:var(--dim);font-size:11px}
+/* Four non-wrapping cells whose combined min-content width exceeded a phone
+   viewport, which forced horizontal overflow on the whole page - that is what
+   was clipping the row buttons, not the rows themselves. */
+.gpu .stats{display:flex;flex-wrap:wrap;gap:4px 14px;justify-content:space-between;margin-top:9px;color:var(--dim);font-size:11px}
 .gpu .stats b{color:var(--cyan-text);font-weight:500}
 .tbl-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .tbl-head h2{font-family:var(--disp);font-weight:600;letter-spacing:.18em;font-size:12px;color:var(--dim);text-transform:uppercase;margin:0}
@@ -162,6 +169,30 @@ body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;ma
 .kgroup{border:1px solid var(--hair);margin-bottom:10px}
 .kgroup>summary{cursor:pointer;padding:9px 12px;font-family:var(--disp);letter-spacing:.12em;text-transform:uppercase;font-size:11px;color:var(--amber-text);background:var(--panel2);user-select:none}
 .kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;padding:14px 12px}
+/* Baseline for every native control.
+   The only input rule used to be `.fld input, .fld select`, so any control not
+   wrapped in a .fld fell through to the browser default - a white box with
+   black text on a black terminal UI. Will-it-run and Context were doing exactly
+   that. Style the elements themselves; .fld then only adds layout on top.
+   Checkboxes and radios are excluded: they want the native box, just tinted. */
+input:not([type=checkbox]):not([type=radio]),select,textarea{
+  background:var(--inset);border:1px solid var(--hair);color:var(--ink);
+  font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none;border-radius:0}
+input:not([type=checkbox]):not([type=radio]):focus,select:focus,textarea:focus{border-color:var(--amber)}
+input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
+input[type=checkbox],input[type=radio]{accent-color:var(--amber);cursor:pointer}
+select{min-width:120px;cursor:pointer}
+select[multiple]{padding:4px;min-height:96px;cursor:default}
+/* Labelled control rows, for views that lay out bare inputs rather than the
+   .fld/.kgrid knob editor. */
+.formrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+.formrow .f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.formrow .f>.lbl{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.formrow .grow{flex:1 1 240px}
+.formrow .grow input,.formrow .grow select{width:100%}
+textarea{width:100%;min-height:140px;line-height:1.55;resize:vertical;box-sizing:border-box}
+input:disabled,select:disabled,textarea:disabled{opacity:.45;cursor:not-allowed}
+
 .fld label{display:block;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fld.set label{color:var(--cyan-text)}
 .fld input,.fld select{width:100%;background:var(--inset);border:1px solid var(--hair);color:var(--ink);font-family:var(--mono);font-size:12px;padding:7px 9px;outline:none}
@@ -268,7 +299,12 @@ body.mode-lite .advanced-only{display:none !important}
 .admon{border-left:3px solid var(--amber);background:var(--panel);padding:8px 12px;margin:10px 0}
 .admon-warning{border-left-color:var(--red)}
 .admon-tip{border-left-color:var(--green)}
-.sicon{background:transparent;border:1px solid var(--hair);border-radius:6px;color:var(--dim);cursor:pointer;
+/* These read as three empty boxes at the bottom of the rail. The glyphs were
+   in the DOM the whole time: .sicon inherits button{padding:9px 16px}, and with
+   the global border-box a 34px-wide button leaves 2px of content box, which
+   crushes the 18px icon to nothing. padding:0 is the fix. */
+.sicon{background:transparent;border:1px solid var(--hair);border-radius:6px;color:var(--ink);cursor:pointer;
+  padding:0;flex:0 0 auto;
   width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center}
 .sicon:hover{color:var(--amber);border-color:var(--amber)}
 .sicon.on{color:var(--amber);border-color:var(--amber)}
@@ -277,6 +313,24 @@ body.mode-lite .advanced-only{display:none !important}
 #nav-menu{display:none;margin-right:10px}
 .scrim{position:fixed;inset:0;background:var(--overlay);z-index:40}
 .scrim[hidden]{display:none}
+/* Model rows: the fixed `14px 18px 1fr auto auto auto` grid cannot shrink, so
+   below ~760px the CTX pill, status and Load button were pushed off-screen and
+   the id ellipsed to "gemma-4-..." - three different models rendering
+   identically. Reflow to wrapped flex and give the id its own full-width line,
+   where it can wrap instead of being truncated. */
+@media (max-width:760px){
+  .rhead{display:flex;flex-wrap:wrap;gap:10px 12px}
+  .rhead .mid{flex:1 1 100%;white-space:normal;overflow:visible;overflow-wrap:anywhere;order:-1}
+  .rhead .led,.rhead .fav{flex:0 0 auto}
+  .rhead .stat{min-width:0;text-align:left;margin-left:auto}
+  .rhead .ctxpill{flex:0 0 auto}
+  .gpus{grid-template-columns:1fr}          /* GPU cards stack; side-by-side clipped TEMP */
+  .topbar{flex-wrap:wrap;gap:6px 12px}
+  .topbar .sub{font-size:10px}
+  .toolbar .search{flex:1 1 100%}
+  #content{padding:0 14px 18px}
+}
+
 @media (max-width:900px){
   :root{--nav-w:52px}                       /* force rail width */
   :root #sidebar .brand-word,

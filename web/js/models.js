@@ -194,13 +194,25 @@ function shownModels() {
     .filter(m => (!mquery || m.id.toLowerCase().includes(mquery)) && (!favOnly || favs.has(m.id)))
     .sort((a, b) => (favs.has(b.id)?1:0) - (favs.has(a.id)?1:0));
 }
-function rowHead(m) {
+const BACKEND_LABEL = { vllm: "vLLM", ikllama: "ik_llama", llamacpp: "llama.cpp" };
+
+// The engine tag only carries information when more than one engine is serving
+// models. On a llama.cpp-only install it was 15 identical LLAMA.CPP tags - pure
+// noise competing with the id for attention.
+function backendTagNeeded() {
+  return new Set(modelRows().map(m => m.backend || "llamacpp")).size > 1;
+}
+
+function rowHead(m, showBackend) {
   const vis = m.modalities.includes("image"), loaded = m.status === "loaded", isFav = favs.has(m.id);
   const stuckSecs = loadingSecs(m);
+  const be = m.backend || "llamacpp";
+  const beTag = showBackend
+    ? `<span class="tag be-${esc(be)}">${esc(BACKEND_LABEL[be] || be)}</span>` : "";
   return `${compareMode?`<input type="checkbox" class="cmp" data-cmp="${esc(m.id)}" ${cmpSet.has(m.id)?"checked":""} title="pick to compare">`:""}
         <span class="led ${loaded?"loaded":""} ${m.failed?"failed":""}"></span>
         <span class="fav ${isFav?"on":""}" data-fav="${esc(m.id)}" title="${isFav?"unfavorite":"favorite"}">&starf;</span>
-        <span class="mid">${esc(m.id)}<span class="tag be-${esc(m.backend||'llamacpp')}">${m.backend==='vllm'?'vLLM':(m.backend==='ikllama'?'ik_llama':'llama.cpp')}</span>${vis?'<span class="tag vis">vision</span>':''}${!m.in_ini?'<span class="tag">auto</span>':''}${m.endpoint?`<span class="tag ep" data-ep="${esc(m.endpoint)}" title="click to copy endpoint">${esc(m.endpoint.replace('http://',''))}</span>`:''}</span>
+        <span class="mid" title="${esc(m.id)}">${esc(m.id)}${beTag}${vis?'<span class="tag vis">vision</span>':''}${!m.in_ini?'<span class="tag">auto</span>':''}${m.endpoint?`<span class="tag ep" data-ep="${esc(m.endpoint)}" title="click to copy endpoint">${esc(m.endpoint.replace('http://',''))}</span>`:''}</span>
         <span class="ctxpill"><span class="k">CTX</span> ${esc(m.eff_ctx)}</span>
         <span class="stat ${loaded?"loaded":""}" style="${stuckSecs>=20?"color:var(--red)":""}">${m.failed?"FAILED":esc(m.status)}${stuckSecs>=20?` (${stuckSecs}s, check log)`:""}</span>
         ${quickBtn(m)}
@@ -208,10 +220,10 @@ function rowHead(m) {
 }
 // Everything rowHead() reads. Compared as a string so an unchanged row is left
 // in the DOM untouched - which is what keeps focus, selection and scroll alive.
-function headSig(m, cols) {
+function headSig(m, cols, showBackend) {
   return JSON.stringify([m.id, m.status, m.failed, m.backend, m.endpoint, m.eff_ctx,
     m.modalities, m.in_ini, favs.has(m.id), compareMode, cmpSet.has(m.id),
-    loadQ.findIndex(j => j.id === m.id), loadingSecs(m) >= 20, cols]);
+    loadQ.findIndex(j => j.id === m.id), loadingSecs(m) >= 20, cols, showBackend]);
 }
 // Keyed so only a different model, backend or schema rebuilds the knob grid.
 function knobSig(m) {
@@ -231,6 +243,7 @@ export function renderModels() {
   document.title = nLoaded ? `▸${nLoaded} LLAMAFORGE` : "LLAMAFORGE";
   const cols = compareMode ? "16px 14px 18px 1fr auto auto auto auto"
                            : "14px 18px 1fr auto auto auto auto";
+  const showBackend = backendTagNeeded();
   const list = $("#list");
   if (!list) return;
   if (!ms.length) { setHTML(list, `<div class="skel">NO MODELS MATCH</div>`); return; }
@@ -247,11 +260,11 @@ export function renderModels() {
       row.innerHTML = `<div class="rhead"></div><div class="edit"></div>`;
     } else existing.delete(m.id);
 
-    const hs = headSig(m, cols);
+    const hs = headSig(m, cols, showBackend);
     if (row._hs !== hs) {
       const head = row.firstElementChild;
       head.style.gridTemplateColumns = cols;
-      setHTML(head, rowHead(m));
+      setHTML(head, rowHead(m, showBackend));
       row._hs = hs;
     }
     row.classList.toggle("open", m.id === openId);

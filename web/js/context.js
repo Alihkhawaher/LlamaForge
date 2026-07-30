@@ -10,27 +10,47 @@ export async function loadContext() {
   const ids = models().map(m => m.id);
   setHTML(v, `
     <div class="card"><h3>Context docs</h3>
-      <select id="wk-doc">${docs.map(n=>`<option>${esc(n)}</option>`).join("")}</select>
-      <button id="wk-new">New</button> <button id="wk-del">Delete</button>
-      <div><textarea id="wk-text" rows="12" style="width:100%"></textarea></div>
-      <button id="wk-save" class="primary">Save doc</button>
+      <div class="formrow">
+        <label class="f grow"><span class="lbl">Document</span>
+          <select id="wk-doc">${docs.map(n=>`<option>${esc(n)}</option>`).join("")}</select></label>
+        <button id="wk-new">New</button>
+        <button id="wk-del">Delete</button>
+      </div>
+      <textarea id="wk-text" rows="12" placeholder="${docs.length?"":"No documents yet - hit New to create one."}"></textarea>
+      <div class="actions"><button id="wk-save" class="primary">Save doc</button></div>
     </div>
     <div class="card"><h3>Profiles</h3>
-      <input id="wk-pname" placeholder="profile name">
-      <select id="wk-pdocs" multiple size="4">${docs.map(n=>`<option>${esc(n)}</option>`).join("")}</select>
-      <button id="wk-psave" class="primary">Save profile</button>
-      <div id="wk-plist" class="note">${Object.keys(profiles).map(esc).join(", ")||"(none)"}</div>
+      <div class="formrow">
+        <label class="f grow"><span class="lbl">Profile name</span>
+          <input id="wk-pname" placeholder="e.g. coding"></label>
+        <label class="f grow"><span class="lbl">Documents in profile</span>
+          ${docs.length
+            ? `<select id="wk-pdocs" multiple size="4">${docs.map(n=>`<option>${esc(n)}</option>`).join("")}</select>`
+            : `<select id="wk-pdocs" multiple size="4" disabled></select>`}</label>
+        <button id="wk-psave" class="primary">Save profile</button>
+      </div>
+      <div class="note">${docs.length?"Ctrl-click to select more than one.":"Create a context doc above first."}</div>
+      <div id="wk-plist" class="note">Saved: ${Object.keys(profiles).map(esc).join(", ")||"(none)"}</div>
     </div>
     <div class="card"><h3>Active profile per model</h3>
-      <select id="wk-model">${ids.map(m=>`<option>${esc(m)}</option>`).join("")}</select>
-      <select id="wk-active"><option value="">(none)</option>${Object.keys(profiles).map(n=>`<option>${esc(n)}</option>`).join("")}</select>
-      <button id="wk-setactive">Set active</button>
+      <div class="formrow">
+        <label class="f grow"><span class="lbl">Model</span>
+          <select id="wk-model">${ids.map(m=>`<option>${esc(m)}</option>`).join("")}</select></label>
+        <label class="f grow"><span class="lbl">Profile</span>
+          <select id="wk-active"><option value="">(none)</option>${Object.keys(profiles).map(n=>`<option>${esc(n)}</option>`).join("")}</select></label>
+        <button id="wk-setactive">Set active</button>
+      </div>
     </div>
     <div class="card"><h3>Export to agent file</h3>
-      <select id="wk-eagent"><option value="claude-code">Claude Code (CLAUDE.md)</option><option value="codex">Codex (AGENTS.md)</option><option value="pi">pi.dev (AGENTS.md)</option></select>
-      <select id="wk-eprofile">${Object.keys(profiles).map(n=>`<option>${esc(n)}</option>`).join("")}</select>
-      <input id="wk-epath" placeholder="(optional) project path; blank = global">
-      <button id="wk-export">Export</button>
+      <div class="formrow">
+        <label class="f grow"><span class="lbl">Agent</span>
+          <select id="wk-eagent"><option value="claude-code">Claude Code (CLAUDE.md)</option><option value="codex">Codex (AGENTS.md)</option><option value="pi">pi.dev (AGENTS.md)</option></select></label>
+        <label class="f grow"><span class="lbl">Profile</span>
+          <select id="wk-eprofile">${Object.keys(profiles).map(n=>`<option>${esc(n)}</option>`).join("")}</select></label>
+        <label class="f grow"><span class="lbl">Project path</span>
+          <input id="wk-epath" placeholder="(optional) blank = global"></label>
+        <button id="wk-export">Export</button>
+      </div>
     </div>`);
   const load = async () => {
     const n = $("#wk-doc").value;
