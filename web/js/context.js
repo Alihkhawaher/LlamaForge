@@ -1,11 +1,19 @@
 // Context tab: markdown context docs, named profiles composed from them, the
 // per-model active profile, and export into an agent's CLAUDE.md / AGENTS.md.
 import { $, esc, setHTML, api, toast } from "./core.js";
-import { models } from "./state.js";
+import { S, models } from "./state.js";
 
 export async function loadContext() {
   const v = $("#view-context");
-  const [d, pr] = await Promise.all([api("/api/wiki/docs"), api("/api/wiki/profiles")]);
+  // Deep-linking straight to #context renders before the first /api/state poll
+  // lands, which left "Active profile per model" with an empty dropdown and no
+  // way to set anything until you visited another tab. Fetch state ourselves
+  // when it isn't there yet rather than rendering a knowingly empty control.
+  const [d, pr] = await Promise.all([
+    api("/api/wiki/docs"),
+    api("/api/wiki/profiles"),
+    S.STATE ? null : api("/api/state").then(s => { if (s && !s.error) S.STATE = s; }),
+  ]);
   const docs = d.docs || [], profiles = pr.profiles || {};
   const ids = models().map(m => m.id);
   setHTML(v, `

@@ -21,6 +21,40 @@ def lan_ip():
     finally:
         s.close()
 
+# ---------------------------------------------------------------- capability
+# The router is driven as `<server_bin> --models-preset <ini> --models-max 1`.
+# Not every llama-family binary can do that: ik_llama.cpp forked before router
+# mode existed and answers `unknown argument: --models-preset`, which would take
+# the router down and leave the dashboard with nothing to talk to. Ask first.
+#
+# Cached on (path, mtime) like the knob schema, and for the same reason: a
+# rebuild re-probes, and a failed probe is never cached so fixing the binary
+# takes effect without restarting the backend.
+_ROUTER_MODE = {}
+
+def clear_router_mode_cache():
+    _ROUTER_MODE.clear()
+
+def supports_router_mode(server_bin):
+    if not server_bin:
+        return False
+    try:
+        key = (server_bin, os.path.getmtime(server_bin))
+    except OSError:
+        return False
+    if key in _ROUTER_MODE:
+        return _ROUTER_MODE[key]
+    try:
+        out = subprocess.check_output([server_bin, "--help"], text=True, timeout=25,
+                                      stderr=subprocess.STDOUT,
+                                      creationflags=CREATE_NO_WINDOW if osplat.IS_WIN else 0)
+    except Exception:
+        return False                      # unreadable -> not cached
+    ok = "--models-preset" in out
+    _ROUTER_MODE[key] = ok
+    return ok
+
+
 def _pid_on_port(port):
     if not osplat.IS_WIN:
         return osplat.pid_on_port_posix(port)

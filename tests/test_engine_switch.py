@@ -55,8 +55,11 @@ class EngineSwitchRouteTest(unittest.TestCase):
         self.restart.assert_not_called()
 
     def test_persists_and_restarts_when_the_binary_is_present(self):
+        """Present AND router-capable: see test_router_capability.py for the
+        binary that exists but cannot be the router."""
         self.base["ik_llama_server_bin"] = "/opt/ik/llama-server"
-        with mock.patch.object(os.path, "exists", return_value=True):
+        with mock.patch.object(os.path, "exists", return_value=True), \
+             mock.patch.object(routes.router_ctl, "supports_router_mode", return_value=True):
             status, out = routes.post_engine_switch(Req(body={"engine": "ikllama"}))
         self.assertEqual(status, 200)
         self.assertTrue(out["ok"])

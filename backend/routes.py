@@ -1179,10 +1179,18 @@ def post_engine_switch(req):
     if engine not in backends.LLAMA_FAMILY:
         raise ApiError(400, f"unknown engine: {engine}")
     c = cfg()
+    current = c.get("active_engine", "llamacpp")
     sbin = _active_server_bin(dict(c, active_engine=engine))
     if not sbin or not os.path.exists(sbin):
-        return 200, {"ok": False, "active_engine": c.get("active_engine", "llamacpp"),
+        return 200, {"ok": False, "active_engine": current,
                      "error": f"binary not found: {sbin or '(unset)'} — build {engine} first"}
+    if not router_ctl.supports_router_mode(sbin):
+        # ik_llama.cpp forked before router mode; it rejects --models-preset and
+        # serves one model per process. Switching anyway would kill the router.
+        return 200, {"ok": False, "active_engine": current,
+                     "error": f"{engine} has no router mode (its llama-server rejects "
+                              f"--models-preset), so LlamaForge cannot drive it as the "
+                              f"router. Staying on {current}."}
     c = config.update({"active_engine": engine})
     ok, err = router_ctl.restart(sbin, config.ini_path(), c["router_port"],
                                  c.get("router_host", "127.0.0.1"),
