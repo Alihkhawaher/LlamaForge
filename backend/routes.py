@@ -33,7 +33,11 @@ VLLM_SUPPORTED = osplat.IS_WIN
 ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB     = os.path.join(ROOT, "web")
 LOGDIR  = os.path.join(ROOT, "logs")
-BUILDER = BuildManager(LOGDIR)
+BUILDER_LLAMA   = BuildManager(LOGDIR, "build")
+BUILDER_IKLLAMA = BuildManager(LOGDIR, "build-ikllama")
+
+def _builder_for(target):
+    return BUILDER_IKLLAMA if target == "ikllama" else BUILDER_LLAMA
 DOWNLOADS = hub.DownloadManager()
 
 VLLM_SETUP_JOB = vllm_job.WslJob(LOGDIR, "vllm-setup.log")
@@ -74,8 +78,10 @@ class Req:
 # ---------------------------------------------------------------- shared state
 _VLLM = None
 _VLLM_DL = None
-_SCHEMA = None       # cached knob schema
-_SCHEMA_KEY = None   # (server_bin, mtime) the cache was built from
+_SCHEMA = None          # cached knob schema (active engine)
+_SCHEMA_KEY = None      # (server_bin, mtime) the cache was built from
+_IK_SCHEMA = None       # cached schema for ik_llama binary
+_IK_SCHEMA_KEY = None
 _VLLM_SCHEMA = None
 
 
@@ -207,23 +213,38 @@ def _gpu_telemetry():
     return res
 
 
-def schema():
-    """Knob schema, cached per (server_bin path, binary mtime).
-
-    Keying on the mtime means the cache self-invalidates when config.json is
-    repointed at a different binary or the binary is rebuilt. Failed attempts
-    are never cached, so fixing the config takes effect without a backend
-    restart."""
-    global _SCHEMA, _SCHEMA_KEY
-    bin_ = cfg()["server_bin"]
+def _cached_schema(bin_path, cache_holder):
+    """Schema cache keyed on (binary path, mtime). Returns (schema, key)."""
+    schema, key = cache_holder
     try:
-        key = (bin_, os.path.getmtime(bin_))
+        new_key = (bin_path, os.path.getmtime(bin_path))
     except OSError:
-        key = (bin_, None)
-    if _SCHEMA is None or _SCHEMA_KEY != key or _SCHEMA.get("error"):
-        _SCHEMA = argspec.build_schema(bin_)
-        _SCHEMA_KEY = key
+        new_key = (bin_path, None)
+    if schema is None or key != new_key or schema.get("error"):
+        schema = argspec.build_schema(bin_path)
+        key = new_key
+    return schema, key
+
+
+def schema():
+    """Knob schema for the active engine, cached per (server_bin, mtime)."""
+    global _SCHEMA, _SCHEMA_KEY
+    c = cfg()
+    if c.get("active_engine") == "ikllama":
+        return ik_schema()
+    bin_ = c["server_bin"]
+    _SCHEMA, _SCHEMA_KEY = _cached_schema(bin_, (_SCHEMA, _SCHEMA_KEY))
     return _SCHEMA
+
+
+def ik_schema():
+    """Knob schema specifically for ik_llama's binary."""
+    global _IK_SCHEMA, _IK_SCHEMA_KEY
+    bin_ = cfg().get("ik_llama_server_bin", "")
+    if not bin_:
+        return {"error": "ik_llama_server_bin not configured"}
+    _IK_SCHEMA, _IK_SCHEMA_KEY = _cached_schema(bin_, (_IK_SCHEMA, _IK_SCHEMA_KEY))
+    return _IK_SCHEMA
 
 
 def vllm_schema():
@@ -599,6 +620,7 @@ def get_state(req):
     s["platform"] = osplat.current()
     s["vllm_supported"] = VLLM_SUPPORTED
     s["backends"] = [b.name for b in REGISTRY.enabled()]
+    s["active_engine"] = c.get("active_engine", "llamacpp")
     s["config_error"] = config.LOAD_ERROR
     s["onboarding"] = {
         "server_bin_ok": bool(c.get("server_bin")) and os.path.exists(c["server_bin"]),
@@ -630,17 +652,32 @@ def get_setup(req):
 
 def get_build_info(req):
     c = cfg()
+    target = req.q("target") or "llamacpp"
+    builder = _builder_for(target)
+    if target == "ikllama":
+        src = c.get("ik_llama_src", "")
+        remote = c.get("ik_llama_git_remote", "https://github.com/ikawrakow/ik_llama.cpp")
+        saved_flags = c.get("ik_llama_cmake_flags", {})
+    else:
+        src = c["llama_src"]
+        remote = c.get("git_remote", "https://github.com/ggml-org/llama.cpp")
+        saved_flags = c.get("cmake_flags", {})
     return 200, {
-        "current": BUILDER.current_commit(c["llama_src"]),
-        "updates": BUILDER.check_updates(c["llama_src"], force=req.flag("force")),
+        "target": target,
+        "current": builder.current_commit(src),
+        "updates": builder.check_updates(src, force=req.flag("force")),
         "recommended_flags": hardware.recommend()["cmake_flags"],
-        "saved_flags": c.get("cmake_flags", {}),
+        "saved_flags": saved_flags,
+        "remote": remote,
     }
 
 
 def get_build_log(req):
-    s = dict(BUILDER.state)
-    s["log"] = BUILDER.tail(300)
+    target = req.q("target") or "llamacpp"
+    builder = _builder_for(target)
+    s = dict(builder.state)
+    s["log"] = builder.tail(300)
+    s["target"] = target
     return 200, s
 
 
@@ -880,11 +917,20 @@ def post_presets_apply(req):
 
 def post_build_start(req):
     c = cfg()
-    flags = req.body.get("flags") or c.get("cmake_flags") or hardware.recommend()["cmake_flags"]
-    config.update({"cmake_flags": flags})
-    ok = BUILDER.start(c["llama_src"], c["build_dir"], flags,
-                       pull=req.body.get("pull", True))
-    return 200, {"started": ok}
+    target = req.body.get("target", "llamacpp")
+    builder = _builder_for(target)
+    if target == "ikllama":
+        src = c.get("ik_llama_src", "")
+        bdir = c.get("ik_llama_build_dir", "")
+        flags = req.body.get("flags") or c.get("ik_llama_cmake_flags") or hardware.recommend()["cmake_flags"]
+        config.update({"ik_llama_cmake_flags": flags})
+    else:
+        src = c["llama_src"]
+        bdir = c["build_dir"]
+        flags = req.body.get("flags") or c.get("cmake_flags") or hardware.recommend()["cmake_flags"]
+        config.update({"cmake_flags": flags})
+    ok = builder.start(src, bdir, flags, pull=req.body.get("pull", True))
+    return 200, {"started": ok, "target": target}
 
 
 def post_setup_install(req):
@@ -1100,6 +1146,14 @@ def post_config(req):
     return 200, out
 
 
+def _active_server_bin(c=None):
+    """Return the server binary path for the currently active engine."""
+    c = c or cfg()
+    if c.get("active_engine") == "ikllama":
+        return c.get("ik_llama_server_bin", "")
+    return c.get("server_bin", "")
+
+
 def post_network(req):
     c = cfg()
     host = req.body.get("host", "127.0.0.1")
@@ -1107,9 +1161,33 @@ def post_network(req):
     if api_key is None:
         api_key = c.get("router_api_key", "")   # field left blank -> keep existing key
     c = config.update({"router_host": host, "router_api_key": api_key})
-    ok, err = router_ctl.restart(c["server_bin"], c["models_ini"], c["router_port"],
+    sbin = _active_server_bin(c)
+    ini = config.ini_path()
+    ok, err = router_ctl.restart(sbin, ini, c["router_port"],
                                  host, api_key, LOGDIR)
     return (200 if ok else 500), {"ok": ok, "error": err, "host": host}
+
+
+def post_engine_switch(req):
+    """Switch the active engine (llamacpp / ikllama) and restart the router.
+
+    Validate the binary BEFORE persisting. `active_engine` steers ini_path(),
+    schema() and the model list, so writing it for an engine that cannot start
+    leaves the panel pointed at nothing - and the failure only shows up later,
+    somewhere else."""
+    engine = req.body.get("engine", "llamacpp")
+    if engine not in backends.LLAMA_FAMILY:
+        raise ApiError(400, f"unknown engine: {engine}")
+    c = cfg()
+    sbin = _active_server_bin(dict(c, active_engine=engine))
+    if not sbin or not os.path.exists(sbin):
+        return 200, {"ok": False, "active_engine": c.get("active_engine", "llamacpp"),
+                     "error": f"binary not found: {sbin or '(unset)'} — build {engine} first"}
+    c = config.update({"active_engine": engine})
+    ok, err = router_ctl.restart(sbin, config.ini_path(), c["router_port"],
+                                 c.get("router_host", "127.0.0.1"),
+                                 c.get("router_api_key", ""), LOGDIR)
+    return 200, {"ok": ok, "active_engine": engine, "error": err}
 
 
 def post_vllm_load(req):
@@ -1316,6 +1394,7 @@ POST_ROUTES = {
     "/api/stats/reset":         post_stats_reset,
     "/api/config":              post_config,
     "/api/network":             post_network,
+    "/api/engine/switch":       post_engine_switch,
     "/api/vllm/load":           post_vllm_load,
     "/api/vllm/unload":         post_vllm_unload,
     "/api/vllm/setup/install":  post_vllm_setup_install,

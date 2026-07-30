@@ -140,6 +140,13 @@ body.app{display:grid;grid-template-columns:var(--nav-w) 1fr;min-height:100vh;ma
 .tag.vis{color:var(--cyan-text);border-color:var(--cyan-border)}
 .tag.be-vllm{color:var(--green);border-color:var(--green-border)}
 .tag.be-llamacpp{color:var(--amber-text);border-color:var(--amber-dim)}
+.tag.be-ikllama{color:var(--cyan-text);border-color:var(--cyan-border)}
+.buildtarget{display:flex;align-items:center;gap:12px;padding:10px 16px}
+.buildtarget .mode-toggle{margin-left:0}
+.buildtarget-active{margin-left:auto;font-size:12px}
+.buildtarget-active strong.ok{color:var(--green)}
+.buildtarget-active strong.dim{color:var(--dim)}
+.buildtarget-active button{margin-left:6px;font-size:11px}
 .tag.ep{color:var(--cyan-text);border-color:var(--cyan-border);cursor:pointer}
 .tag.ep:hover{color:var(--ink-strong);border-color:var(--cyan)}
 .ctxpill{font-size:11px;color:var(--amber-text);white-space:nowrap}.ctxpill .k{color:var(--dim)}
@@ -336,6 +343,7 @@ body.mode-lite .advanced-only{display:none !important}
   <div class="topbar">
     <button id="nav-menu" class="nav-toggle" title="Menu" aria-label="Open menu">&#9776;</button>
     <span id="page-title">Models</span>
+    <span id="engine-badge"></span>
     <span class="sub" id="clock"></span>
   </div>
   <div class="views">
