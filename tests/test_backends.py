@@ -14,17 +14,21 @@ import backends
 class FakeDeps:
     """The handful of routes.py functions a backend reaches for."""
 
-    def __init__(self, models=None, router_port=8080, globals_=None):
+    def __init__(self, models=None, router_port=8080, globals_=None, config=None):
         self._models = models or []
         self._port = router_port
         self._globals = globals_ or {}
+        self._config = config or {}
         self.router_calls = []
         self.mgr = mock.Mock()
         self.mgr.status.return_value = []
         self.dl = mock.Mock()
 
     def cfg(self):
-        return {"router_port": self._port}
+        return dict(self._config, router_port=self._port)
+
+    def ik_schema(self):
+        return {"groups": [], "count": 0}
 
     def model_state(self):
         import copy
@@ -198,9 +202,56 @@ class RegistryTest(unittest.TestCase):
         with mock.patch.object(backends.osplat, "IS_WIN", False):
             self.assertEqual(self.reg.for_model("ghost").name, "llamacpp")
 
+
+class EngineSelectionTest(unittest.TestCase):
+    """The engine question is answered from injected deps, never by reaching
+    around them into the real config.json - otherwise a developer's own machine
+    decides what the tests see."""
+
+    def _reg(self, **cfg):
+        return backends.Registry(FakeDeps(
+            models=[{"id": "qwen", "status": "offline"}], config=cfg))
+
+    def test_ikllama_is_unavailable_without_a_binary(self):
+        with mock.patch.object(backends.osplat, "IS_WIN", False):
+            names = [b.name for b in self._reg().enabled()]
+        self.assertEqual(names, ["llamacpp"])
+
+    def test_ikllama_availability_reads_injected_config_not_the_real_one(self):
+        """Point deps at a file that exists; the engine must light up from THAT,
+        with no reference to the config.json on this machine."""
+        with mock.patch.object(backends.os.path, "exists", return_value=True), \
+             mock.patch.object(backends.osplat, "IS_WIN", False):
+            reg = self._reg(ik_llama_server_bin="/nowhere/llama-server")
+            names = [b.name for b in reg.enabled()]
+        self.assertEqual(names, ["llamacpp", "ikllama"])
+
+    def test_state_uses_the_active_engine_from_deps(self):
+        with mock.patch.object(backends.os.path, "exists", return_value=True), \
+             mock.patch.object(backends.osplat, "IS_WIN", False):
+            reg = self._reg(active_engine="ikllama",
+                            ik_llama_server_bin="/nowhere/llama-server")
+            st = reg.state()
+        self.assertEqual([m["backend"] for m in st["models"]], ["ikllama"])
+
+    def test_state_lists_each_model_once_not_per_llama_engine(self):
+        """Both llama engines drive the same router, so a model must not appear
+        twice just because ik_llama happens to be built."""
+        with mock.patch.object(backends.os.path, "exists", return_value=True), \
+             mock.patch.object(backends.osplat, "IS_WIN", False):
+            st = self._reg(ik_llama_server_bin="/nowhere/llama-server").state()
+        self.assertEqual([m["id"] for m in st["models"]], ["qwen"])
+
+    def test_an_unknown_active_engine_falls_back_instead_of_raising(self):
+        """/api/state polls every few seconds; a typo in config.json must not
+        turn the whole dashboard into a 500."""
+        with mock.patch.object(backends.osplat, "IS_WIN", False):
+            st = self._reg(active_engine="typo").state()
+        self.assertEqual([m["backend"] for m in st["models"]], ["llamacpp"])
+
     def test_every_backend_satisfies_the_documented_verbs(self):
         """What a third engine has to implement."""
-        for be in self.reg.all():
+        for be in self._reg().all():
             for verb in ("available", "list_models", "schema", "load", "unload",
                          "save", "delete"):
                 self.assertTrue(callable(getattr(be, verb, None)),

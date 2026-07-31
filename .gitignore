@@ -1,6 +1,9 @@
 # machine-specific - never commit
 config.json
 models.ini
+# timestamped copies the app (and past rescues) leave beside them
+config.json.backup-*
+models.ini.backup-*
 stats.json
 wiki/
 logs/

@@ -32,7 +32,7 @@ Pure stdlib.
 """
 import os
 
-import config, osplat, vllm_ctl, vllm_registry, wsl
+import osplat, vllm_ctl, vllm_registry, wsl
 
 
 class Unsupported(Exception):
@@ -179,12 +179,43 @@ STATE_MAP = {"ready": "loaded", "loading": "loading", "starting": "loading",
              "failed": "offline", "stopped": "offline"}
 
 
+class IkLlamaBackend(LlamaCppBackend):
+    """GGUF models served by ik_llama (ikawrakow's llama.cpp fork).
+
+    It speaks the same router API as llama.cpp, so it inherits everything except
+    which binary is on the other end and which knob schema that binary reports."""
+    name = "ikllama"
+
+    def available(self):
+        sbin = self._d.cfg().get("ik_llama_server_bin", "")
+        return bool(sbin and os.path.exists(sbin))
+
+    def schema(self):
+        return self._d.ik_schema()
+
+
+# Engines that drive llama.cpp's router. Only one can own the router at a time,
+# so `state()` reports the active one and skips its sibling rather than listing
+# the same models twice.
+LLAMA_FAMILY = ("llamacpp", "ikllama")
+
+
 class Registry:
     """The set of engines this install can use, and the lookup that lets a route
     act on a model without knowing which engine owns it."""
 
     def __init__(self, deps):
-        self._backends = [LlamaCppBackend(deps), VllmBackend(deps)]
+        self._d = deps
+        self._backends = [LlamaCppBackend(deps), IkLlamaBackend(deps), VllmBackend(deps)]
+
+    def active_engine(self):
+        """Which llama-family engine owns the router right now.
+
+        Read through the injected deps like everything else here, and validated:
+        /api/state polls this every few seconds, so a stray value in config.json
+        must degrade to the default rather than 500 the whole dashboard."""
+        name = self._d.cfg().get("active_engine", "llamacpp")
+        return name if name in LLAMA_FAMILY else "llamacpp"
 
     def all(self):
         return list(self._backends)
@@ -207,13 +238,18 @@ class Registry:
     def state(self):
         """{"models": [...], "global": {...}} across every usable engine, ordered
         loaded-first then by id - the order the model list has always used.
-        `global` stays llama.cpp's [*] section; it is a models.ini concept."""
-        llama = self.get("llamacpp")
-        base = llama.state()
+        `global` stays the active engine's [*] section; it is a models.ini concept."""
+        active = self.active_engine()
+        base_backend = self.get(active)
+        base = base_backend.state()
         rows = list(base["models"])
         for b in self.enabled():
-            if b is not llama:
-                rows.extend(b.list_models())
+            if b is base_backend:
+                continue
+            # The idle llama-family sibling would re-list the same router rows.
+            if b.name in LLAMA_FAMILY:
+                continue
+            rows.extend(b.list_models())
         rows.sort(key=lambda m: (m["status"] != "loaded", m["id"]))
         return {"models": rows, "global": base.get("global", {})}
 
@@ -227,7 +263,14 @@ class Registry:
         has - taking it avoids listing every engine's models just to route one
         click. It is only trusted if it names a usable engine; otherwise we look
         the id up, and fall back to llama.cpp so ids that predate the registry
-        resolve the way they always did."""
+        resolve the way they always did.
+
+        A llama-family hint is snapped to whichever of those engines is active:
+        an open tab can hold a row tagged with the engine that was current when
+        it rendered, and honouring that stale tag would edit knobs against the
+        wrong binary's schema."""
+        if hint in LLAMA_FAMILY:
+            return self.get(self.active_engine())
         if hint and self.supports(hint):
             return self.get(hint)
         for b in self.enabled():
