@@ -9,10 +9,10 @@ UPDATE_TTL      = 900   # seconds a successful upstream check stays cached
 UPDATE_TTL_FAIL = 60    # failed fetches retry sooner, but never per-click
 
 class BuildManager:
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, log_name="build"):
         self.log_dir = log_dir
         os.makedirs(log_dir, exist_ok=True)
-        self.log_path = os.path.join(log_dir, "build.log")
+        self.log_path = os.path.join(log_dir, f"{log_name}.log")
         self.lock = threading.Lock()
         self.state = {"running": False, "phase": "idle", "returncode": None,
                       "started": None, "finished": None}

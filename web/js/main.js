@@ -5,7 +5,7 @@
 // There are no `window`-assigned globals: every handler is wired with
 // addEventListener (toolbar controls by id, dynamic rows by delegation), so the
 // HTML and view templates carry no inline on* attributes to keep in sync.
-import { $, api } from "./core.js";
+import { $, api, esc, setHTML } from "./core.js";
 import { S } from "./state.js";
 import * as ui from "./ui.js";
 import * as models from "./models.js";
@@ -48,9 +48,29 @@ window.addEventListener("hashchange", () => {
 });
 if (location.hash) ui.switchTab(location.hash.slice(1));
 
+// The engine badge sits beside the clock but changes about once a session,
+// so it gets its own element: the clock stays a textContent write, and the
+// badge is only re-rendered (through the audited setHTML/esc sink) when the
+// engine actually changes. Rebuilding markup once a second would both churn
+// the DOM and put a dynamic value into innerHTML on every tick.
+const ENGINE_LABEL = { llamacpp: "llama.cpp", ikllama: "ik_llama" };
+let shownEngine = null;
+
+function renderEngineBadge() {
+  const engine = (S.STATE && S.STATE.active_engine) || "";
+  if (engine === shownEngine) return;
+  shownEngine = engine;
+  const el = $("#engine-badge");
+  if (!el) return;
+  setHTML(el, engine
+    ? `<span class="tag be-${esc(engine)}">${esc(ENGINE_LABEL[engine] || engine)}</span>`
+    : "");
+}
+
 function clock() {
   const el = $("#clock");
   if (el) el.textContent = new Date().toLocaleTimeString("en-GB") + " LOCAL";
+  renderEngineBadge();
 }
 clock();
 setInterval(clock, 1000);
